@@ -20,6 +20,7 @@ let isBossFight = false;
 let frameCount = 0;
 let backgroundX = 0;
 let isGroundSlippery = false;
+let isOneShotMode = false; // 치트키: 한방 모드
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -961,6 +962,19 @@ const npcs = {
 const keys = { left: false, right: false, down: false, e: false, p: false, m: false, b: false };
 function handleKeyDown(e) {
     const key = e.key.toLowerCase();
+
+    // --- 치트키 ---
+    if (key === 'h') {
+        isOneShotMode = !isOneShotMode;
+        alert(`한방 모드 ${isOneShotMode ? '활성화' : '비활성화'}`);
+        return;
+    }
+    if (key === '0') {
+        nextStage();
+        return;
+    }
+    // ---
+
     if (activeUI) {
         if (key === 'e') keys.e = true;
         return;
@@ -1312,7 +1326,11 @@ function checkStageCollisions() {
         for (let i = lasers.length - 1; i >= 0; i--) {
             const laser = lasers[i];
             if (isColliding(laser, boss)) {
-                boss.hp -= 10;
+                if (isOneShotMode) {
+                    boss.hp = 0;
+                } else {
+                    boss.hp -= 10;
+                }
                 createSparkEffect(laser.x, laser.y); // 스파크 효과
                 lasers.splice(i, 1);
                 if (boss.hp <= 0) {
