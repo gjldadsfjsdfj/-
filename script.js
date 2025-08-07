@@ -1563,6 +1563,13 @@ function drawStageUI() {
     }
     ctx.fillStyle = '#888'; ctx.fillRect(STAGE_WIDTH - 120, 10, 110, 30);
     ctx.fillStyle = 'white'; ctx.font = '16px Arial'; ctx.fillText('마을로 가기', STAGE_WIDTH - 110, 30);
+
+    // Credit text
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('승재가 만듬', STAGE_WIDTH - 10, STAGE_HEIGHT - 10);
+    ctx.textAlign = 'left'; // Reset alignment
 }
 
 // --- 마을 로직 ---
