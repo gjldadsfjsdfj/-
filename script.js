@@ -1294,7 +1294,7 @@ function updateStageLogic() {
     }
 
     // Enemy spawning logic
-    if (!isBossFight) {
+    if (!isBossFight && stages[stage - 1].type !== 'boss') {
         const maxEnemies = (currentStageData.type === 'kill') ? 5 : 3;
         if (frameCount % 80 === 0 && enemies.length < maxEnemies) {
              createEnemy();
