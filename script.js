@@ -287,7 +287,24 @@ const player = {
     shoot() {
         const armY = this.y + this.headRadius * 2 + (this.height - this.headRadius * 2) / 2;
         const laserX = this.x + this.width / 2;
-        lasers.push({ x: laserX, y: armY, width: 20, height: 5, color: '#00ff00', direction: this.direction });
+        
+        const laserProps = {
+            x: laserX,
+            y: armY,
+            width: 20,
+            height: 5,
+            color: '#00ff00',
+            direction: keys.b ? 'up' : this.direction
+        };
+
+        if (keys.b) {
+            laserProps.width = 5;
+            laserProps.height = 20;
+            laserProps.x = laserX - laserProps.width / 2; // 중앙 정렬
+        }
+
+        lasers.push(laserProps);
+
         // 발사 섬광 효과
         particles.push({
             x: laserX, y: armY,
@@ -941,7 +958,7 @@ const npcs = {
 };
 
 // --- 입력 처리 ---
-const keys = { left: false, right: false, down: false, e: false, p: false, m: false };
+const keys = { left: false, right: false, down: false, e: false, p: false, m: false, b: false };
 function handleKeyDown(e) {
     const key = e.key.toLowerCase();
     if (activeUI) {
@@ -956,6 +973,7 @@ function handleKeyDown(e) {
     if (key === ' ') { e.preventDefault(); player.shoot(); }
     if (key === 'e') keys.e = true;
     if (key === 'p') player.usePotion();
+    if (key === 'b') keys.b = true;
     if (key === 'm') {
         if (ultimateGauge >= 100 && !isUltimateActive) {
             isUltimateActive = true;
@@ -985,6 +1003,7 @@ function handleKeyUp(e) {
     if (key === 'arrowright' || key === 'd') keys.right = false;
     if (key === 'arrowdown' || key === 's') { keys.down = false; player.crouch(false); }
     if (key === 'e') keys.e = false;
+    if (key === 'b') keys.b = false;
 }
 document.addEventListener('keydown', handleKeyDown);
 document.addEventListener('keyup', handleKeyUp);
@@ -1188,8 +1207,17 @@ function updateStageLogic() {
 
     for (let i = lasers.length - 1; i >= 0; i--) {
         const l = lasers[i];
-        if (l.direction === 'right') l.x += LASER_SPEED; else l.x -= LASER_SPEED;
-        if (l.x > STAGE_WIDTH || l.x < 0) lasers.splice(i, 1);
+        if (l.direction === 'right') {
+            l.x += LASER_SPEED;
+        } else if (l.direction === 'left') {
+            l.x -= LASER_SPEED;
+        } else if (l.direction === 'up') {
+            l.y -= LASER_SPEED;
+        }
+
+        if (l.x > STAGE_WIDTH || l.x < 0 || l.y < 0) {
+            lasers.splice(i, 1);
+        }
     }
 
     // Enemy spawning logic
