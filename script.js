@@ -37,6 +37,52 @@ let villageVisitCount = 3;
 let stage7BossRush = [];
 let currentBossIndex = 0;
 
+// --- 오디오 관리 ---
+// (오디오 파일은 게임 폴더에 있어야 합니다)
+const sounds = {
+    jump: new Audio('jump.wav'),
+    coin: new Audio('coin.wav'),
+    walk: new Audio('walk.wav'),
+    stage1: new Audio('stage1.mp3'),
+    stage2: new Audio('stage2.mp3'),
+    stage3: new Audio('stage3.mp3'),
+    stage4: new Audio('stage4.mp3'),
+    stage5: new Audio('stage5.mp3'),
+    stage6: new Audio('stage6.mp3'),
+    stage7: new Audio('stage7.mp3'),
+};
+
+let currentBGM = null;
+let isWalkingSoundPlaying = false;
+
+function playSound(soundName) {
+    if (sounds[soundName]) {
+        sounds[soundName].currentTime = 0;
+        sounds[soundName].play().catch(e => console.log("Sound play failed:", e));
+    }
+}
+
+function playBGM(stageNum) {
+    const bgmName = `stage${stageNum}`;
+    if (currentBGM === sounds[bgmName]) return; // 이미 재생 중이면 아무것도 안함
+
+    stopBGM(); // 기존 BGM 중지
+
+    if (sounds[bgmName]) {
+        currentBGM = sounds[bgmName];
+        currentBGM.loop = true;
+        currentBGM.play().catch(e => console.log("BGM play failed:", e));
+    }
+}
+
+function stopBGM() {
+    if (currentBGM) {
+        currentBGM.pause();
+        currentBGM.currentTime = 0;
+        currentBGM = null;
+    }
+}
+
 // --- 스테이지 데이터 ---
 const stages = [
     { // Stage 1
@@ -259,6 +305,18 @@ const player = {
         this.dy += this.gravity;
         this.y += this.dy;
         const ground = STAGE_HEIGHT - GROUND_HEIGHT;
+
+        const isMovingOnGround = !this.isJumping && (keys.left || keys.right) && this.y + this.height >= ground;
+
+        if (isMovingOnGround && !isWalkingSoundPlaying) {
+            sounds.walk.loop = true;
+            sounds.walk.play().catch(e => {});
+            isWalkingSoundPlaying = true;
+        } else if (!isMovingOnGround && isWalkingSoundPlaying) {
+            sounds.walk.pause();
+            isWalkingSoundPlaying = false;
+        }
+
         if (this.y + this.height > ground) {
             if (this.isJumping) { // 착지 시 먼지 효과
                 createDustEffect(this.x + this.width / 2, this.y + this.height);
@@ -273,6 +331,7 @@ const player = {
 
     jump() { 
         if (!this.isJumping && !this.isCrouching) { 
+            playSound('jump');
             this.isJumping = true; 
             this.dy = this.jumpPower; 
             createDustEffect(this.x + this.width / 2, this.y + this.height);
@@ -1312,6 +1371,7 @@ function checkStageCollisions() {
                 lasers.splice(i, 1);
                 ultimateGauge = Math.min(100, ultimateGauge + 10);
                 player.coins += 10;
+                playSound('coin');
                 player.enemyKillCount++;
 
                 const currentStageData = stages[stage - 1];
@@ -1335,6 +1395,7 @@ function checkStageCollisions() {
                 lasers.splice(i, 1);
                 if (boss.hp <= 0) {
                     player.coins += 500;
+                    playSound('coin');
                     boss = null; // 보스 사망 처리
                     if (stage !== 7) {
                         nextStage();
@@ -1834,13 +1895,18 @@ function nextStage() {
     goToStage();
 }
 
-function goToMenu() { gameState = 'menu'; activeUI = null; }
+function goToMenu() { 
+    gameState = 'menu'; 
+    activeUI = null; 
+    stopBGM();
+}
 function goToVillage() { 
     if (stage === 7) {
         if (villageVisitCount > 0) {
             villageVisitCount--;
             gameState = 'village';
             activeUI = null;
+            stopBGM();
             if (villageVisitCount === 0) {
                 alert("이제 더 이상 마을로 돌아갈 수 없습니다.");
             }
@@ -1851,6 +1917,7 @@ function goToVillage() {
     } else {
         gameState = 'village'; 
         activeUI = null; 
+        stopBGM();
     }
 }
 function goToStage() { 
@@ -1859,6 +1926,7 @@ function goToStage() {
     player.x = 100; 
     player.y = STAGE_HEIGHT - GROUND_HEIGHT - 100; 
     activeUI = null; 
+    playBGM(stage);
     const currentStageData = stages[stage - 1];
     if(currentStageData.type === 'boss' && currentStageData.bossSpawnTime === 0) {
         isBossFight = true;
