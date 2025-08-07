@@ -31,6 +31,7 @@ const lightningZones = []; // 스테이지 1, 3 보스용
 const residualElectrics = []; // 스테이지 2 보스용
 const bubbles = []; // 스테이지 3 보스용
 const fires = []; // 스테이지 6 보스용
+const particles = []; // 파티클 효과용
 let villageVisitCount = 3;
 let stage7BossRush = [];
 let currentBossIndex = 0;
@@ -134,6 +135,18 @@ const player = {
         const bodyY = this.y + this.headRadius * 2;
         const bodyHeight = this.height - this.headRadius * 2;
         const centerX = this.x + this.width / 2;
+
+        // 필살기 오라 효과
+        if (isUltimateActive && this.equippedUltimate === 'damage') {
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = 'red';
+            const auraRadius = 75 + Math.sin(frameCount * 0.3) * 10;
+            ctx.beginPath();
+            ctx.arc(centerX, this.y + this.height / 2, auraRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
+
 
         if (this.isInvincible && Math.floor(this.invincibleTimer / 5) % 2 === 0) {
             ctx.globalAlpha = 0.5;
@@ -246,6 +259,9 @@ const player = {
         this.y += this.dy;
         const ground = STAGE_HEIGHT - GROUND_HEIGHT;
         if (this.y + this.height > ground) {
+            if (this.isJumping) { // 착지 시 먼지 효과
+                createDustEffect(this.x + this.width / 2, this.y + this.height);
+            }
             this.isJumping = false;
             this.y = ground - this.height;
             this.dy = 0;
@@ -254,11 +270,33 @@ const player = {
         if (this.x + this.width > STAGE_WIDTH) this.x = STAGE_WIDTH - this.width;
     },
 
-    jump() { if (!this.isJumping && !this.isCrouching) { this.isJumping = true; this.dy = this.jumpPower; } },
-    crouch(isPressed) { if (this.isJumping) return; this.isCrouching = isPressed; },
+    jump() { 
+        if (!this.isJumping && !this.isCrouching) { 
+            this.isJumping = true; 
+            this.dy = this.jumpPower; 
+            createDustEffect(this.x + this.width / 2, this.y + this.height);
+        } 
+    },
+    crouch(isPressed) { 
+        if (this.isJumping) return; 
+        if (isPressed && !this.isCrouching) { // 수그리기 시작 시 증기 효과
+            createSteamEffect(this.x + this.width / 2, this.y + this.height / 2);
+        }
+        this.isCrouching = isPressed; 
+    },
     shoot() {
         const armY = this.y + this.headRadius * 2 + (this.height - this.headRadius * 2) / 2;
-        lasers.push({ x: this.x + this.width / 2, y: armY, width: 20, height: 5, color: '#00ff00', direction: this.direction });
+        const laserX = this.x + this.width / 2;
+        lasers.push({ x: laserX, y: armY, width: 20, height: 5, color: '#00ff00', direction: this.direction });
+        // 발사 섬광 효과
+        particles.push({
+            x: laserX, y: armY,
+            dx: 0, dy: 0,
+            radius: 8,
+            color: '#fff',
+            life: 5,
+            startLife: 5
+        });
     },
     takeDamage() {
         if (!this.isInvincible && !(isUltimateActive && this.equippedUltimate === 'defense')) {
@@ -852,6 +890,49 @@ function createFire(x, y, width, duration) {
     });
 }
 
+// --- 파티클 효과 생성 함수 ---
+function createDustEffect(x, y) {
+    for (let i = 0; i < 5; i++) {
+        particles.push({
+            x: x, y: y,
+            dx: (Math.random() - 0.5) * 2,
+            dy: Math.random() * -1.5,
+            radius: Math.random() * 3 + 1,
+            color: '#888',
+            life: 20,
+            startLife: 20
+        });
+    }
+}
+
+function createSparkEffect(x, y) {
+    for (let i = 0; i < 8; i++) {
+        particles.push({
+            x: x, y: y,
+            dx: (Math.random() - 0.5) * 4,
+            dy: (Math.random() - 0.5) * 4,
+            radius: Math.random() * 2 + 1,
+            color: '#ffcc00',
+            life: 15,
+            startLife: 15
+        });
+    }
+}
+
+function createSteamEffect(x, y) {
+     for (let i = 0; i < 3; i++) {
+        particles.push({
+            x: x + (Math.random() - 0.5) * 10, y: y,
+            dx: (Math.random() - 0.5) * 0.5,
+            dy: -0.5 - Math.random() * 0.5,
+            radius: Math.random() * 4 + 2,
+            color: '#fff',
+            life: 25,
+            startLife: 25
+        });
+    }
+}
+
 
 const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
@@ -1162,6 +1243,18 @@ function updateStageLogic() {
         }
         if (ultimateTimer <= 0) { isUltimateActive = false; ultimateGauge = 0; }
     }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.dx;
+        p.y += p.dy;
+        p.life--;
+        if (p.radius > 0.2) p.radius -= 0.1;
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
 }
 
 function checkStageCollisions() {
@@ -1172,6 +1265,7 @@ function checkStageCollisions() {
                 if (isUltimateActive && player.equippedUltimate === 'vampiric_aura') {
                     player.hp = Math.min(player.maxHp, player.hp + 1);
                 }
+                createSparkEffect(laser.x, laser.y); // 스파크 효과
                 enemies.splice(j, 1);
                 lasers.splice(i, 1);
                 ultimateGauge = Math.min(100, ultimateGauge + 10);
@@ -1188,8 +1282,10 @@ function checkStageCollisions() {
     }
     if (isBossFight && boss) {
         for (let i = lasers.length - 1; i >= 0; i--) {
-            if (isColliding(lasers[i], boss)) {
+            const laser = lasers[i];
+            if (isColliding(laser, boss)) {
                 boss.hp -= 10;
+                createSparkEffect(laser.x, laser.y); // 스파크 효과
                 lasers.splice(i, 1);
                 if (boss.hp <= 0) {
                     player.coins += 500;
@@ -1232,6 +1328,17 @@ function drawStage() {
     });
     ctx.fillStyle = '#00ff00';
     lasers.forEach(l => ctx.fillRect(l.x, l.y, l.width, l.height));
+
+    // Draw particles
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life / p.startLife;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    });
+
     drawStageUI();
 }
 
