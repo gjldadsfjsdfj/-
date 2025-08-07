@@ -7,8 +7,9 @@ const STAGE_HEIGHT = canvas.height;
 const GROUND_HEIGHT = 50;
 
 // --- 게임 상태 관리 ---
-let gameState = 'menu'; // menu, stage, village
+let gameState = 'story'; // menu, stage, village
 let activeUI = null; // null, 'quest', 'shop'
+let storyPage = 0;
 let stage = 1;
 let ultimateGauge = 0;
 let isUltimateActive = false;
@@ -912,6 +913,14 @@ function handleMouseClick(e) {
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const mousePos = { x: mouseX, y: mouseY, width: 1, height: 1 };
 
+    if (gameState === 'story') {
+        storyPage++;
+        if (storyPage > 2) {
+            gameState = 'menu';
+        }
+        return;
+    }
+
     if (gameState === 'menu') {
         Object.keys(ultimates).forEach((id, index) => {
             const ultButton = { x: 250, y: 150 + index * 60, width: 300, height: 50 };
@@ -963,19 +972,45 @@ function updateLogic() {
         if (keys.e) { activeUI = null; keys.e = false; }
         return;
     }
-    if (gameState === 'menu') updateMenuLogic();
+    if (gameState === 'story') { /* No updates needed */ }
+    else if (gameState === 'menu') updateMenuLogic();
     else if (gameState === 'stage') updateStageLogic();
     else if (gameState === 'village') updateVillageLogic();
 }
 
 function draw() {
     ctx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
-    if (gameState === 'menu') drawMenu();
+    if (gameState === 'story') drawStory();
+    else if (gameState === 'menu') drawMenu();
     else if (gameState === 'stage') drawStage();
     else if (gameState === 'village') drawVillage();
 
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
+}
+
+// --- 스토리 로직 ---
+function drawStory() {
+    const storyText = [
+        "미래 언제 머~언 미래에",
+        "멋진 ai가 만들어 지는 공장이 있었다.",
+        "사람들에게 도움을 주는 ai가 되기 위해서 보스들을 물리치러 가는데....!"
+    ];
+
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    ctx.fillStyle = 'black';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    
+    if (storyPage < storyText.length) {
+        ctx.fillText(storyText[storyPage], STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
+    }
+
+    ctx.font = '16px Arial';
+    ctx.fillText('(화면을 터치하여 계속)', STAGE_WIDTH / 2, STAGE_HEIGHT - 50);
+    ctx.textAlign = 'left'; // Reset alignment for other functions
 }
 
 // --- 메뉴 로직 ---
