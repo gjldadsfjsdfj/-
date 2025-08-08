@@ -7,9 +7,10 @@ const STAGE_HEIGHT = canvas.height;
 const GROUND_HEIGHT = 50;
 
 // --- 게임 상태 관리 ---
-let gameState = 'story'; // menu, stage, village
+let gameState = 'story'; // menu, stage, village, ending, reviving
 let activeUI = null; // null, 'quest', 'shop'
 let storyPage = 0;
+let endingPage = 0;
 let stage = 1;
 let ultimateGauge = 0;
 let isUltimateActive = false;
@@ -1242,6 +1243,20 @@ function handleMouseClick(e) {
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const mousePos = { x: mouseX, y: mouseY, width: 1, height: 1 };
 
+    if (gameState === 'ending') {
+        endingPage++;
+        if (endingPage === 3) { // "Tode z.m!" 다음
+            setTimeout(() => { endingPage++; }, 5000);
+        } else if (endingPage === 4) { // "승재가 만듬" 다음
+             setTimeout(() => { endingPage++; }, 5000);
+        } else if (endingPage === 5) { // "그 소리의 주인은...." 다음
+             setTimeout(() => { endingPage++; }, 5000);
+        } else if (endingPage > 6) { // 마지막 화면 클릭
+            document.location.reload();
+        }
+        return;
+    }
+
     if (gameState === 'reviving') {
         player.hp = player.maxHp;
         player.isInvincible = true;
@@ -1316,6 +1331,7 @@ function updateLogic() {
     else if (gameState === 'stage') updateStageLogic();
     else if (gameState === 'village') updateVillageLogic();
     else if (gameState === 'reviving') { /* Do nothing */ }
+    else if (gameState === 'ending') { /* Do nothing */ }
 }
 
 function draw() {
@@ -1325,6 +1341,7 @@ function draw() {
     else if (gameState === 'stage') drawStage();
     else if (gameState === 'village') drawVillage();
     else if (gameState === 'reviving') drawRevivalScreen();
+    else if (gameState === 'ending') drawEndingScreen();
 
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
@@ -1960,6 +1977,33 @@ function drawRevivalScreen() {
     ctx.textAlign = 'left';
 }
 
+function drawEndingScreen() {
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'black';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+
+    let text = "";
+    switch(endingPage) {
+        case 0: text = "그렇게 모든 보스를 쓰러뜨리고 멋진 ai가 되었다고 한다."; break;
+        case 1: text = "그 ai의 이름은...."; break;
+        case 2: text = "Tode z.m!"; break;
+        case 3: text = "승재가 만듬"; break;
+        case 4: text = "그 소리의 주인은...."; break;
+        case 5: text = "신의 목소리 였다고 한다...!"; break;
+        case 6: text = "게임을 한번더 플레이 하시겠습니까?"; break;
+    }
+
+    ctx.fillText(text, STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
+
+    if (endingPage < 2 || endingPage === 6) {
+        ctx.font = '16px Arial';
+        ctx.fillText('(화면을 터치하여 계속)', STAGE_WIDTH / 2, STAGE_HEIGHT - 50);
+    }
+    ctx.textAlign = 'left';
+}
+
 function buyItem(item, id) {
     if (player.coins >= item.price) {
         player.coins -= item.price;
@@ -2056,7 +2100,6 @@ function toggleRadio() {
 function nextStage() {
     // 스테이지 7 보스 러쉬 클리어 후 히든 보스 등장
     if (stage === 7 && !isFightingHiddenBoss) {
-        alert(".......?");
         isFightingHiddenBoss = true;
         isBossFight = true;
         boss = null;
@@ -2070,17 +2113,15 @@ function nextStage() {
         player.enemyKillCount = 0;
 
         stopBGM();
-        setTimeout(createHiddenBoss, 2000);
+        setTimeout(createHiddenBoss, 1000);
         return;
     }
 
     // 히든 보스 클리어 후 진엔딩
     if (isFightingHiddenBoss) {
-        alert("축하합니다! 진정한 최종 보스를 물리쳤습니다!");
-        goToMenu();
-        stage = 1;
-        isFightingHiddenBoss = false;
-        villageVisitCount = 3;
+        gameState = 'ending';
+        endingPage = 0;
+        stopBGM();
         return;
     }
 
