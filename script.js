@@ -21,6 +21,10 @@ let frameCount = 0;
 let backgroundX = 0;
 let isGroundSlippery = false;
 let isOneShotMode = false; // 치트키: 한방 모드
+let isSpawningNextBoss = false;
+let isFightingHiddenBoss = false;
+let isPoweredUp = false;
+let powerUpTimer = 0;
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -183,6 +187,11 @@ const player = {
         const bodyHeight = this.height - this.headRadius * 2;
         const centerX = this.x + this.width / 2;
 
+        if (isPoweredUp) {
+            ctx.shadowColor = 'cyan';
+            ctx.shadowBlur = 30;
+        }
+
         // 필살기 오라 효과
         if (isUltimateActive && this.equippedUltimate === 'damage') {
             ctx.globalAlpha = 0.5;
@@ -272,9 +281,17 @@ const player = {
             ctx.shadowBlur = 20;
         }
         ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
     },
 
     update() {
+        if (isPoweredUp) {
+            powerUpTimer--;
+            if (powerUpTimer <= 0) {
+                isPoweredUp = false;
+            }
+        }
+
         if (isGroundSlippery) {
             if (keys.left) this.velocity -= 1;
             if (keys.right) this.velocity += 1;
@@ -882,6 +899,145 @@ function createStage7Boss() {
     };
 }
 
+function createHiddenBoss() {
+    isFightingHiddenBoss = true;
+    boss = {
+        x: STAGE_WIDTH / 2 - 100, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 200, height: 200,
+        hp: 5000, maxHp: 5000,
+        attackCooldown: 180,
+        pattern: 0,
+        state: 'idle',
+        stateTimer: 0,
+        draw() {
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            // Hoodie
+            ctx.fillStyle = '#1a1a1a'; // Dark gray hoodie
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y + this.height);
+            ctx.lineTo(this.x, centerY);
+            ctx.quadraticCurveTo(centerX, this.y - 20, this.x + this.width, centerY);
+            ctx.lineTo(this.x + this.width, this.y + this.height);
+            ctx.closePath();
+            ctx.fill();
+
+            // Face shadow
+            ctx.fillStyle = '#000';
+            ctx.fillRect(centerX - 50, centerY - 20, 100, 80);
+
+            // Glowing green glasses
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(centerX - 40, centerY, 30, 15);
+            ctx.fillRect(centerX + 10, centerY, 30, 15);
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+            ctx.shadowColor = '#00ff00';
+            ctx.shadowBlur = 20;
+            ctx.fillRect(centerX - 45, centerY - 5, 40, 25);
+            ctx.fillRect(centerX + 5, centerY - 5, 40, 25);
+            ctx.shadowBlur = 0;
+
+            // Laptop screen glow on body
+            ctx.fillStyle = 'rgba(0, 100, 255, 0.2)';
+            ctx.fillRect(this.x + 20, this.y + this.height - 80, this.width - 40, 60);
+        },
+        update() {
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0 && this.state === 'idle') {
+                this.state = 'acting';
+                this.pattern = Math.floor(Math.random() * 3);
+                switch (this.pattern) {
+                    case 0: // Bomb barrage
+                        this.stateTimer = 180; // 3 seconds of bombs
+                        this.attackCooldown = 240;
+                        break;
+                    case 1: // Slippery floor + lightning + laser
+                        this.stateTimer = 600; // 10 seconds for this hell
+                        isGroundSlippery = true;
+                        this.attackCooldown = 720;
+                        break;
+                    case 2: // Balloon burst
+                        this.stateTimer = 180;
+                        this.attackCooldown = 240;
+                        break;
+                }
+            }
+
+            if (this.state === 'acting') {
+                this.stateTimer--;
+                switch (this.pattern) {
+                    case 0: // Bomb barrage
+                        if (this.stateTimer % 15 === 0) {
+                            this.shootHorizontalBomb();
+                        }
+                        break;
+                    case 1: // Slippery floor combo
+                        if (this.stateTimer % 120 === 0) { // Every 2 seconds
+                            createLightningZone(player.x - 50);
+                        }
+                        if (this.stateTimer % 60 === 0) { // Every 1 second
+                            this.shootSlowLaser();
+                        }
+                        break;
+                    case 2: // Balloon burst
+                        if (this.stateTimer === 180 || this.stateTimer === 120 || this.stateTimer === 60) {
+                             for (let i = 0; i < 5; i++) bossProjectiles.push(createBalloon(this.x, this.y + this.height / 2));
+                        }
+                        break;
+                }
+
+                if (this.stateTimer <= 0) {
+                    this.state = 'idle';
+                    if (this.pattern === 1) {
+                        isGroundSlippery = false;
+                    }
+                }
+            }
+        },
+        shootHorizontalBomb() {
+            bossProjectiles.push({
+                x: 0, y: STAGE_HEIGHT - GROUND_HEIGHT - 40, // Fly just above the ground
+                width: 30, height: 30, speedX: 8, type: 'bomb',
+                draw() {
+                    ctx.fillStyle = 'red';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.width/2, 0, Math.PI*2);
+                    ctx.fill();
+                },
+                update() {
+                    this.x += this.speedX;
+                    // Explode on player collision or off-screen
+                    if (isColliding(player, this) || this.x > STAGE_WIDTH) {
+                        if(isColliding(player, this)) player.takeDamage();
+                        const index = bossProjectiles.indexOf(this);
+                        if(index > -1) bossProjectiles.splice(index, 1);
+                    }
+                }
+            });
+        },
+        shootSlowLaser() {
+            bossProjectiles.push({
+                x: STAGE_WIDTH, y: Math.random() * (STAGE_HEIGHT - GROUND_HEIGHT - 20),
+                width: STAGE_WIDTH, height: 15, timer: 60, // 1 second duration
+                speedX: 2, // Slow moving laser
+                type: 'wide_laser',
+                draw() {
+                    ctx.fillStyle = `rgba(255, 100, 0, ${0.2 + (this.timer / 60) * 0.6})`;
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                },
+                update() {
+                    this.timer--;
+                    this.x -= this.speedX; // Move slowly from right to left
+                    if (this.timer <= 0) {
+                        const index = bossProjectiles.indexOf(this);
+                        if (index > -1) bossProjectiles.splice(index, 1);
+                    }
+                }
+            });
+        }
+    };
+}
+
 
 function createBalloon(x, y) {
     const angleToPlayer = Math.atan2(player.y - y, player.x - x);
@@ -1086,6 +1242,16 @@ function handleMouseClick(e) {
     const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const mousePos = { x: mouseX, y: mouseY, width: 1, height: 1 };
 
+    if (gameState === 'reviving') {
+        player.hp = player.maxHp;
+        player.isInvincible = true;
+        player.invincibleTimer = 600; // 10초
+        isPoweredUp = true;
+        powerUpTimer = 600;
+        gameState = 'stage';
+        return;
+    }
+
     if (gameState === 'story') {
         storyPage++;
         if (storyPage > 2) {
@@ -1149,6 +1315,7 @@ function updateLogic() {
     else if (gameState === 'menu') updateMenuLogic();
     else if (gameState === 'stage') updateStageLogic();
     else if (gameState === 'village') updateVillageLogic();
+    else if (gameState === 'reviving') { /* Do nothing */ }
 }
 
 function draw() {
@@ -1157,6 +1324,7 @@ function draw() {
     else if (gameState === 'menu') drawMenu();
     else if (gameState === 'stage') drawStage();
     else if (gameState === 'village') drawVillage();
+    else if (gameState === 'reviving') drawRevivalScreen();
 
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
@@ -1244,21 +1412,21 @@ function drawMenu() {
 function updateStageLogic() {
     const currentStageData = stages[stage - 1];
 
-    if (stage === 7) {
-        isGroundSlippery = true;
-        if (isBossFight && !boss) { // 보스러시 중 보스가 죽으면
+    if (stage === 7 && !isFightingHiddenBoss) {
+        if (isBossFight && !boss && !isSpawningNextBoss) { // 보스러시 중 보스가 죽으면
+            isSpawningNextBoss = true;
             currentBossIndex++;
             if (currentBossIndex < stage7BossRush.length) {
                 // 잠시 후 다음 보스 등장
                 setTimeout(() => {
                     stage7BossRush[currentBossIndex]();
+                    isSpawningNextBoss = false; // 보스 스폰 완료
                 }, 2000);
             } else {
                 nextStage(); // 모든 보스 클리어
             }
         }
-    } else {
-        isGroundSlippery = false;
+    } else if (!isFightingHiddenBoss) {
         if (currentStageData.type === 'boss' && !isBossFight) {
             gameTimer += 1 / 60;
             if (gameTimer >= currentStageData.bossSpawnTime) {
@@ -1294,7 +1462,7 @@ function updateStageLogic() {
     }
 
     // Enemy spawning logic
-    if (!isBossFight && stages[stage - 1].type !== 'boss') {
+    if (!isBossFight) {
         const maxEnemies = (currentStageData.type === 'kill') ? 5 : 3;
         if (frameCount % 80 === 0 && enemies.length < maxEnemies) {
              createEnemy();
@@ -1389,15 +1557,18 @@ function checkStageCollisions() {
                 if (isOneShotMode) {
                     boss.hp = 0;
                 } else {
-                    boss.hp -= 10;
+                    const damage = isPoweredUp ? 50 : 10;
+                    boss.hp -= damage;
                 }
                 createSparkEffect(laser.x, laser.y); // 스파크 효과
                 lasers.splice(i, 1);
                 if (boss.hp <= 0) {
-                    player.coins += 500;
+                    player.coins += 1000;
                     playSound('coin');
                     boss = null; // 보스 사망 처리
                     if (stage !== 7) {
+                        nextStage();
+                    } else if (isFightingHiddenBoss) {
                         nextStage();
                     }
                 }
@@ -1624,6 +1795,9 @@ function drawStageUI() {
             if (currentBossIndex === stage7BossRush.length - 1) {
                 bossName = "FINAL BOSS";
             }
+            if (isFightingHiddenBoss) {
+                bossName = "???";
+            }
             ctx.fillText(bossName, STAGE_WIDTH / 2 - 50, 30);
         }
     }
@@ -1774,6 +1948,18 @@ function drawShopUI() {
     ctx.textAlign = 'left';
 }
 
+function drawRevivalScreen() {
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'black';
+    ctx.font = '40px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText("일어나! 토드! 넌 할수있어!", STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
+    ctx.font = '20px Arial';
+    ctx.fillText("(화면을 터치하여 부활)", STAGE_WIDTH / 2, STAGE_HEIGHT / 2 + 50);
+    ctx.textAlign = 'left';
+}
+
 function buyItem(item, id) {
     if (player.coins >= item.price) {
         player.coins -= item.price;
@@ -1868,6 +2054,36 @@ function toggleRadio() {
 }
 
 function nextStage() {
+    // 스테이지 7 보스 러쉬 클리어 후 히든 보스 등장
+    if (stage === 7 && !isFightingHiddenBoss) {
+        alert(".......?");
+        isFightingHiddenBoss = true;
+        isBossFight = true;
+        boss = null;
+        enemies.length = 0;
+        bossProjectiles.length = 0;
+        lightningZones.length = 0;
+        residualElectrics.length = 0;
+        bubbles.length = 0;
+        fires.length = 0;
+        isGroundSlippery = false;
+        player.enemyKillCount = 0;
+
+        stopBGM();
+        setTimeout(createHiddenBoss, 2000);
+        return;
+    }
+
+    // 히든 보스 클리어 후 진엔딩
+    if (isFightingHiddenBoss) {
+        alert("축하합니다! 진정한 최종 보스를 물리쳤습니다!");
+        goToMenu();
+        stage = 1;
+        isFightingHiddenBoss = false;
+        villageVisitCount = 3;
+        return;
+    }
+
     stage++;
     if (stage > stages.length) {
         alert("축하합니다! 모든 스테이지를 클리어했습니다!");
@@ -1927,6 +2143,7 @@ function goToStage() {
     player.y = STAGE_HEIGHT - GROUND_HEIGHT - 100; 
     activeUI = null; 
     playBGM(stage);
+    isSpawningNextBoss = false;
     const currentStageData = stages[stage - 1];
     if(currentStageData.type === 'boss' && currentStageData.bossSpawnTime === 0) {
         isBossFight = true;
@@ -1936,7 +2153,14 @@ function goToStage() {
         currentStageData.createBoss();
     }
 }
-function gameOver() { alert("Game Over"); document.location.reload(); }
+function gameOver() {
+    if (isFightingHiddenBoss) {
+        gameState = 'reviving';
+    } else {
+        alert("Game Over");
+        document.location.reload();
+    }
+}
 
 function gameLoop() {
     frameCount++;
@@ -1946,5 +2170,3 @@ function gameLoop() {
 }
 
 gameLoop();
-
-
