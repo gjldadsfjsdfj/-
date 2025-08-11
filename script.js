@@ -7,9 +7,19 @@ const STAGE_HEIGHT = canvas.height;
 const GROUND_HEIGHT = 50;
 
 // --- 게임 상태 관리 ---
-let gameState = 'story'; // menu, stage, village, ending, reviving
+let gameState = 'story'; // tutorial, menu, stage, village, ending, reviving
 let activeUI = null; // null, 'quest', 'shop'
 let storyPage = 0;
+let tutorialState = {
+    step: 0, // 0: move, 1: jump, 2: crouch, 3: shoot, 4: ultimate, 5: dash, 6: done
+    movedLeft: false,
+    movedRight: false,
+    jumped: false,
+    crouched: false,
+    shot: false,
+    ultimateUsed: false,
+    dashed: false
+};
 let endingPage = 0;
 let stage = 1;
 let ultimateGauge = 0;
@@ -38,6 +48,7 @@ const residualElectrics = []; // 스테이지 2 보스용
 const bubbles = []; // 스테이지 3 보스용
 const fires = []; // 스테이지 6 보스용
 const particles = []; // 파티클 효과용
+const obstacles = []; // 스테이지 9 보스용
 let villageVisitCount = 3;
 let stage7BossRush = [];
 let currentBossIndex = 0;
@@ -45,16 +56,16 @@ let currentBossIndex = 0;
 // --- 오디오 관리 ---
 // (오디오 파일은 게임 폴더에 있어야 합니다)
 const sounds = {
-    jump: new Audio('jump.wav'),
-    coin: new Audio('coin.wav'),
-    walk: new Audio('walk.wav'),
-    stage1: new Audio('stage1.mp3'),
-    stage2: new Audio('stage2.mp3'),
-    stage3: new Audio('stage3.mp3'),
-    stage4: new Audio('stage4.mp3'),
-    stage5: new Audio('stage5.mp3'),
-    stage6: new Audio('stage6.mp3'),
-    stage7: new Audio('stage7.mp3'),
+    // jump: new Audio('jump.wav'),
+    // coin: new Audio('coin.wav'),
+    // walk: new Audio('walk.wav'),
+    // stage1: new Audio('stage1.mp3'),
+    // stage2: new Audio('stage2.mp3'),
+    // stage3: new Audio('stage3.mp3'),
+    // stage4: new Audio('stage4.mp3'),
+    // stage5: new Audio('stage5.mp3'),
+    // stage6: new Audio('stage6.mp3'),
+    // stage7: new Audio('stage7.mp3'),
 };
 
 let currentBGM = null;
@@ -135,6 +146,30 @@ const stages = [
             stage7BossRush[currentBossIndex]();
         }
     },
+    { // Stage 8 - Diamond World
+        type: 'survival',
+        survivalTime: 40, // 40초 생존
+        drawBackground: drawStage8Background,
+        createBoss: createSharkBoss,
+    },
+    { // Stage 9 - Ghost Lair
+        type: 'boss',
+        bossSpawnTime: 0,
+        drawBackground: drawStage9Background,
+        createBoss: createGhostBoss,
+    },
+	{ // Stage 10 - Rody
+        type: 'boss',
+        bossSpawnTime: 0,
+        drawBackground: drawStage10Background,
+        createBoss: createRodyBoss,
+    },
+    { // Stage 11 - Purple Orb
+        type: 'boss',
+        bossSpawnTime: 0,
+        drawBackground: drawStage11Background,
+        createBoss: createStage11Boss,
+    }
 ];
 
 
@@ -182,6 +217,12 @@ const player = {
     },
     equippedUltimate: 'damage',
     enemyKillCount: 0,
+    isDashing: false,
+    dashTimer: 0,
+    dashCooldown: 0,
+    dashSpeed: 18,
+    isSlowed: false,
+    slowTimer: 0,
 
     draw() {
         const bodyY = this.y + this.headRadius * 2;
@@ -286,27 +327,45 @@ const player = {
     },
 
     update() {
-        if (isPoweredUp) {
-            powerUpTimer--;
-            if (powerUpTimer <= 0) {
-                isPoweredUp = false;
-            }
-        }
-
-        if (isGroundSlippery) {
-            if (keys.left) this.velocity -= 1;
-            if (keys.right) this.velocity += 1;
-            this.velocity = Math.max(-this.speed, Math.min(this.speed, this.velocity));
+        if (this.dashCooldown > 0) this.dashCooldown--;
+        if (this.slowTimer > 0) {
+            this.slowTimer--;
         } else {
-            this.velocity = 0;
-            if (keys.left) this.velocity = -this.speed;
-            if (keys.right) this.velocity = this.speed;
+            this.isSlowed = false;
         }
-        
-        this.x += this.velocity;
 
-        if(isGroundSlippery) {
-            this.velocity *= this.friction;
+        const currentSpeed = this.isSlowed ? this.speed / 2 : this.speed;
+
+        if (this.isDashing) {
+            this.dashTimer--;
+            this.x += (this.direction === 'right' ? this.dashSpeed : -this.dashSpeed);
+            createDashParticle(this.x + this.width / 2, this.y + this.height / 2);
+            if (this.dashTimer <= 0) {
+                this.isDashing = false;
+            }
+        } else {
+            if (isPoweredUp) {
+                powerUpTimer--;
+                if (powerUpTimer <= 0) {
+                    isPoweredUp = false;
+                }
+            }
+
+            if (isGroundSlippery) {
+                if (keys.left) this.velocity -= 1;
+                if (keys.right) this.velocity += 1;
+                this.velocity = Math.max(-currentSpeed, Math.min(currentSpeed, this.velocity));
+            } else {
+                this.velocity = 0;
+                if (keys.left) this.velocity = -currentSpeed;
+                if (keys.right) this.velocity = currentSpeed;
+            }
+            
+            this.x += this.velocity;
+
+            if(isGroundSlippery) {
+                this.velocity *= this.friction;
+            }
         }
 
 
@@ -315,8 +374,8 @@ const player = {
             if (this.invincibleTimer <= 0) this.isInvincible = false;
         }
         if (gameState === 'stage') {
-             if (keys.left) backgroundX += this.speed / 4;
-            if (keys.right) backgroundX -= this.speed / 4;
+             if (keys.left) backgroundX += currentSpeed / 4;
+            if (keys.right) backgroundX -= currentSpeed / 4;
         }
         this.height = this.isCrouching ? this.crouchHeight : this.baseHeight;
         
@@ -327,11 +386,13 @@ const player = {
         const isMovingOnGround = !this.isJumping && (keys.left || keys.right) && this.y + this.height >= ground;
 
         if (isMovingOnGround && !isWalkingSoundPlaying) {
-            sounds.walk.loop = true;
-            sounds.walk.play().catch(e => {});
+            if(sounds.walk) {
+                sounds.walk.loop = true;
+                sounds.walk.play().catch(e => {});
+            }
             isWalkingSoundPlaying = true;
         } else if (!isMovingOnGround && isWalkingSoundPlaying) {
-            sounds.walk.pause();
+            if(sounds.walk) sounds.walk.pause();
             isWalkingSoundPlaying = false;
         }
 
@@ -410,6 +471,15 @@ const player = {
     },
     knockback(amount) {
         this.x -= amount;
+    },
+    dash() {
+        if (!this.isDashing && this.dashCooldown <= 0) {
+            this.isDashing = true;
+            this.dashTimer = 15; // 15프레임 (0.25초) 동안 대시
+            this.dashCooldown = 60; // 60프레임 (1초) 쿨다운
+            this.isInvincible = true; // 대시 중 무적
+            this.invincibleTimer = 15;
+        }
     }
 };
 
@@ -429,8 +499,26 @@ function createEnemy() {
     const newEnemy = {
         x: STAGE_WIDTH, y: STAGE_HEIGHT - GROUND_HEIGHT - size, width: size, height: size,
         speed: (Math.random() * 2 + 1) * (1 + (stage - 1) * 0.1),
+        laserCooldown: (stage === 8) ? 300 : 0, // 5초 쿨다운 (60fps * 5)
         draw() { ctx.fillStyle = 'purple'; ctx.fillRect(this.x, this.y, this.width, this.height); },
-        update(speedMultiplier = 1) { this.x -= this.speed * speedMultiplier; }
+        update(speedMultiplier = 1) { 
+            this.x -= this.speed * speedMultiplier; 
+            if (this.laserCooldown > 0) {
+                this.laserCooldown--;
+                if (this.laserCooldown === 0) {
+                    this.shootLaser();
+                    this.laserCooldown = 300;
+                }
+            }
+        },
+        shootLaser() {
+            const angleToPlayer = Math.atan2((player.y + player.height / 2) - (this.y + this.height / 2), (player.x + player.width / 2) - (this.x + this.width / 2));
+            bossProjectiles.push({
+                x: this.x, y: this.y + this.height / 2, width: 15, height: 5, speed: 5, angle: angleToPlayer, type: 'laser',
+                draw() { ctx.fillStyle = 'orange'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+                update(speedMultiplier = 1) { this.x += Math.cos(this.angle) * this.speed * speedMultiplier; this.y += Math.sin(this.angle) * this.speed * speedMultiplier; }
+            });
+        }
     };
     enemies.push(newEnemy);
     return newEnemy; // 반환하여 속성 수정 가능하게
@@ -1167,6 +1255,22 @@ function createSteamEffect(x, y) {
     }
 }
 
+function createDashParticle(x, y) {
+    const angle = player.direction === 'right' ? Math.PI : 0;
+    for (let i = 0; i < 5; i++) {
+        particles.push({
+            x: x,
+            y: y + (Math.random() - 0.5) * 20,
+            dx: Math.cos(angle) * (Math.random() * 3 + 2),
+            dy: (Math.random() - 0.5) * 1,
+            radius: Math.random() * 2 + 1,
+            color: '#fff',
+            life: 15,
+            startLife: 15
+        });
+    }
+}
+
 
 const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
@@ -1200,12 +1304,13 @@ function handleKeyDown(e) {
     if (key === 'arrowright' || key === 'd') { keys.right = true; player.direction = 'right'; }
     if (key === 'arrowdown' || key === 's') { keys.down = true; player.crouch(true); }
     if (key === 'arrowup' || key === 'w') player.jump();
+    if (key === '/') player.dash();
     if (key === ' ') { e.preventDefault(); player.shoot(); }
     if (key === 'e') keys.e = true;
     if (key === 'p') player.usePotion();
     if (key === 'b') keys.b = true;
     if (key === 'm') {
-        if (ultimateGauge >= 100 && !isUltimateActive) {
+        if ((gameState === 'stage' || gameState === 'tutorial') && ultimateGauge >= 100 && !isUltimateActive) {
             isUltimateActive = true;
             ultimateTimer = ULTIMATE_DURATION;
             if (player.equippedUltimate === 'teleport') {
@@ -1245,19 +1350,15 @@ function handleMouseClick(e) {
 
     if (gameState === 'ending') {
         endingPage++;
-        if (endingPage === 3) { // "Tode z.m!" 다음
-            setTimeout(() => { endingPage++; }, 5000);
-        } else if (endingPage === 4) { // "승재가 만듬" 다음
-             setTimeout(() => { endingPage++; }, 5000);
-        } else if (endingPage === 5) { // "그 소리의 주인은...." 다음
-             setTimeout(() => { endingPage++; }, 5000);
-        } else if (endingPage > 6) { // 마지막 화면 클릭
+        // There are 5 ending texts (0-4). After the last one, reload.
+        if (endingPage >= 5) {
             document.location.reload();
         }
         return;
     }
 
     if (gameState === 'reviving') {
+        villageVisitCount--;
         player.hp = player.maxHp;
         player.isInvincible = true;
         player.invincibleTimer = 600; // 10초
@@ -1270,7 +1371,7 @@ function handleMouseClick(e) {
     if (gameState === 'story') {
         storyPage++;
         if (storyPage > 2) {
-            gameState = 'menu';
+            startTutorial();
         }
         return;
     }
@@ -1327,6 +1428,7 @@ function updateLogic() {
         return;
     }
     if (gameState === 'story') { /* No updates needed */ }
+    else if (gameState === 'tutorial') updateTutorialLogic();
     else if (gameState === 'menu') updateMenuLogic();
     else if (gameState === 'stage') updateStageLogic();
     else if (gameState === 'village') updateVillageLogic();
@@ -1337,6 +1439,7 @@ function updateLogic() {
 function draw() {
     ctx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
     if (gameState === 'story') drawStory();
+    else if (gameState === 'tutorial') drawTutorial();
     else if (gameState === 'menu') drawMenu();
     else if (gameState === 'stage') drawStage();
     else if (gameState === 'village') drawVillage();
@@ -1370,6 +1473,148 @@ function drawStory() {
     ctx.fillText('(화면을 터치하여 계속)', STAGE_WIDTH / 2, STAGE_HEIGHT - 50);
     ctx.textAlign = 'left'; // Reset alignment for other functions
 }
+
+// --- 튜토리얼 로직 ---
+function startTutorial() {
+    gameState = 'tutorial';
+    player.x = 100;
+    player.y = STAGE_HEIGHT - GROUND_HEIGHT - player.height;
+    tutorialState = {
+        step: 0,
+        movedLeft: false,
+        movedRight: false,
+        jumped: false,
+        crouched: false,
+        shot: false,
+        ultimateUsed: false,
+        dashed: false
+    };
+}
+
+function updateTutorialLogic() {
+    player.update();
+
+    // 튜토리얼 중 필살기 게이지 UI 업데이트
+    if (isUltimateActive) {
+        ultimateTimer -= 1 / 60;
+        if (ultimateTimer <= 0) {
+            isUltimateActive = false;
+            ultimateGauge = 0;
+        }
+    }
+
+    switch (tutorialState.step) {
+        case 0: // Move
+            if (keys.left) tutorialState.movedLeft = true;
+            if (keys.right) tutorialState.movedRight = true;
+            if (tutorialState.movedLeft && tutorialState.movedRight) {
+                tutorialState.step++;
+            }
+            break;
+        case 1: // Jump
+            if (player.isJumping) {
+                tutorialState.jumped = true;
+            }
+            if (tutorialState.jumped && !player.isJumping) { // 점프 후 착지까지 확인
+                tutorialState.step++;
+            }
+            break;
+        case 2: // Crouch
+            if (player.isCrouching) {
+                tutorialState.crouched = true;
+            }
+            if(tutorialState.crouched && !player.isCrouching) { // 앉았다가 일어서면
+                 tutorialState.step++;
+            }
+            break;
+        case 3: // Shoot
+            if (lasers.length > 0) {
+                tutorialState.shot = true;
+            }
+            if (tutorialState.shot) {
+                tutorialState.step++;
+                ultimateGauge = 100; // 필살기 게이지 채우기
+                lasers.length = 0; // 튜토리얼 레이저 정리
+            }
+            break;
+        case 4: // Ultimate
+            if (isUltimateActive) {
+                tutorialState.ultimateUsed = true;
+            }
+            if (tutorialState.ultimateUsed) {
+                tutorialState.step++;
+            }
+            break;
+        case 5: // Dash
+            if (player.isDashing) {
+                tutorialState.dashed = true;
+            }
+            if (tutorialState.dashed) {
+                tutorialState.step++;
+                 // 튜토리얼 완료 후 잠시 대기했다가 메뉴로 이동
+                setTimeout(() => {
+                    gameState = 'menu';
+                }, 2000);
+            }
+            break;
+    }
+}
+
+
+function drawTutorial() {
+    drawTutorialBackground();
+    player.draw();
+    lasers.forEach(l => ctx.fillRect(l.x, l.y, l.width, l.height));
+
+
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    let instructionText = '';
+
+    switch (tutorialState.step) {
+        case 0:
+            instructionText = 'A/D 또는 ←/→ 키를 눌러 양쪽으로 움직여보세요.';
+            break;
+        case 1:
+            instructionText = '잘했어요! 이제 W 또는 ↑ 키를 눌러 점프해보세요.';
+            break;
+        case 2:
+            instructionText = '좋아요! S 또는 ↓ 키를 눌러 앉아보세요.';
+            break;
+        case 3:
+            instructionText = '완벽해요! 스페이스바를 눌러 공격해보세요.';
+            break;
+        case 4:
+            instructionText = '필살기 게이지가 찼습니다! M 키를 눌러 필살기를 사용하세요.';
+            break;
+        case 5:
+            instructionText = '마지막으로 / 키를 눌러 대시해보세요.';
+            break;
+        case 6:
+            instructionText = '튜토리얼 완료! 잠시 후 메뉴로 이동합니다.';
+            break;
+    }
+
+    ctx.fillText(instructionText, STAGE_WIDTH / 2, 100);
+
+    // 필살기 게이지 UI
+    if (tutorialState.step === 4) {
+        ctx.fillStyle = 'gray'; ctx.fillRect(STAGE_WIDTH / 2 - 100, 150, 200, 20);
+        ctx.fillStyle = 'yellow'; ctx.fillRect(STAGE_WIDTH / 2 - 100, 150, ultimateGauge * 2, 20);
+        ctx.strokeStyle = 'white'; ctx.strokeRect(STAGE_WIDTH / 2 - 100, 150, 200, 20);
+    }
+
+    ctx.textAlign = 'left';
+}
+
+function drawTutorialBackground() {
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = '#555';
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+}
+
 
 // --- 메뉴 로직 ---
 function updateMenuLogic() {
@@ -1443,6 +1688,13 @@ function updateStageLogic() {
                 nextStage(); // 모든 보스 클리어
             }
         }
+    } else if (currentStageData.type === 'survival' && !isBossFight) {
+        gameTimer += 1 / 60;
+        if (gameTimer >= currentStageData.survivalTime) {
+            isBossFight = true;
+            enemies.length = 0; // 보스전 시작 시 일반 몹 제거
+            createBoss();
+        }
     } else if (!isFightingHiddenBoss) {
         if (currentStageData.type === 'boss' && !isBossFight) {
             gameTimer += 1 / 60;
@@ -1513,6 +1765,11 @@ function updateStageLogic() {
         f.update();
         if (f.timer <= 0) fires.splice(i, 1);
     }
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.update();
+        if (o.x < -o.width || o.x > STAGE_WIDTH) obstacles.splice(i, 1);
+    }
 
     if (isUltimateActive) {
         ultimateTimer -= 1 / 60;
@@ -1582,11 +1839,22 @@ function checkStageCollisions() {
                 if (boss.hp <= 0) {
                     player.coins += 1000;
                     playSound('coin');
-                    boss = null; // 보스 사망 처리
-                    if (stage !== 7) {
+                    
+                    if (stage === 8) {
                         nextStage();
-                    } else if (isFightingHiddenBoss) {
-                        nextStage();
+                        return;
+                    }
+
+                    const isFinalBoss = (stage === 7 && !isFightingHiddenBoss && currentBossIndex === stage7BossRush.length - 1) || isFightingHiddenBoss;
+
+                    if (isFinalBoss) {
+                        boss = null;
+                        startDiamondStage();
+                    } else {
+                        boss = null; // 보스 사망 처리
+                        if (stage !== 7) {
+                            nextStage();
+                        }
                     }
                 }
                 break;
@@ -1602,6 +1870,7 @@ function checkStageCollisions() {
         }
     }
     for (const fire of fires) { if(isColliding(player, fire)) player.takeDamage(); }
+    for (const obstacle of obstacles) { if (isColliding(player, obstacle)) player.takeDamage(); }
 }
 
 function drawStage() {
@@ -1615,6 +1884,7 @@ function drawStage() {
     lightningZones.forEach(z => z.draw());
     residualElectrics.forEach(r => r.draw());
     fires.forEach(f => f.draw());
+    obstacles.forEach(o => o.draw());
     bubbles.forEach(b => {
         ctx.fillStyle = 'rgba(173, 216, 230, 0.7)';
         ctx.beginPath();
@@ -1738,476 +2008,824 @@ function drawStage5Background() {
     ctx.lineTo(castleX + 500, STAGE_HEIGHT - GROUND_HEIGHT);
     ctx.closePath();
     ctx.fill();
-
-    // Spooky trees
-    for (let i = 0; i < 5; i++) {
-        const treeX = (i * 250 - (backgroundX * 0.8 % 250)) % STAGE_WIDTH;
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(treeX, STAGE_HEIGHT - GROUND_HEIGHT - 100, 10, 100);
-        ctx.beginPath();
-        ctx.arc(treeX + 5, STAGE_HEIGHT - GROUND_HEIGHT - 100, 30, Math.PI, Math.PI * 2);
-        ctx.fill();
-    }
-
+    
     // Ground
     ctx.fillStyle = '#333';
     ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
 }
 
 function drawStage6Background() {
-    ctx.fillStyle = '#87CEEB'; // 하늘
+    // Burning sky
+    const skyGradient = ctx.createLinearGradient(0, 0, 0, STAGE_HEIGHT);
+    skyGradient.addColorStop(0, '#ff5e00');
+    skyGradient.addColorStop(1, '#ffc300');
+    ctx.fillStyle = skyGradient;
     ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT - GROUND_HEIGHT);
-    // 땅
-    ctx.fillStyle = '#228B22';
+
+    // Charred ground
+    ctx.fillStyle = '#222';
     ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
 }
 
 function drawStage7Background() {
-    // 어두운 성 내부
-    ctx.fillStyle = '#1a1a2e'; // 매우 어두운 남색
+    // Final battle background - dark, ominous
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    // Ground
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+}
+
+function drawStage8Background() {
+    // Diamond world background
+    const diamondGradient = ctx.createLinearGradient(0, 0, 0, STAGE_HEIGHT);
+    diamondGradient.addColorStop(0, '#b9f2ff');
+    diamondGradient.addColorStop(1, '#e0c3fc');
+    ctx.fillStyle = diamondGradient;
     ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
 
-    // 배경에 창문 추가
-    for (let i = 0; i < 3; i++) {
-        const windowX = 150 + i * 250 - (backgroundX * 0.2 % 250);
-        const windowY = 150;
-        ctx.fillStyle = '#f1c40f'; // 창문 빛
+    // Draw diamond shapes
+    for(let i=0; i<10; i++) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.5 + 0.2})`;
         ctx.beginPath();
-        ctx.arc(windowX, windowY, 50, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.beginPath();
-        ctx.moveTo(windowX, windowY - 50);
-        ctx.lineTo(windowX - 100, STAGE_HEIGHT);
-        ctx.lineTo(windowX + 100, STAGE_HEIGHT);
+        const x = Math.random() * STAGE_WIDTH;
+        const y = Math.random() * STAGE_HEIGHT;
+        const size = Math.random() * 50 + 20;
+        ctx.moveTo(x, y - size / 2);
+        ctx.lineTo(x + size / 2, y);
+        ctx.lineTo(x, y + size / 2);
+        ctx.lineTo(x - size / 2, y);
         ctx.closePath();
         ctx.fill();
     }
 
-    // 바닥
-    ctx.fillStyle = '#000000'; // 검은색 바닥
+    // Ground
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+}
+
+function drawStage9Background() {
+    // Ghost Lair
+    ctx.fillStyle = '#000020'; // Very dark blue
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    // Ectoplasm effect
+    for(let i=0; i<5; i++) {
+        ctx.fillStyle = `rgba(0, 255, 150, ${Math.random() * 0.1 + 0.05})`;
+        ctx.beginPath();
+        ctx.arc(Math.random() * STAGE_WIDTH, Math.random() * STAGE_HEIGHT, Math.random() * 100 + 50, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Ground
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+}
+
+function drawStage10Background() {
+    // Factory/Lab background
+    ctx.fillStyle = '#4a4a4a'; // Dark gray wall
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    // Pipes
+    ctx.fillStyle = '#7a7a7a';
+    ctx.fillRect(100, 0, 40, STAGE_HEIGHT - 100);
+    ctx.fillRect(500, 100, 40, STAGE_HEIGHT);
+    ctx.fillRect(0, 200, 200, 40);
+
+    // Floor
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+    // Floor tiles
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < STAGE_WIDTH; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(i, STAGE_HEIGHT - GROUND_HEIGHT);
+        ctx.lineTo(i, STAGE_HEIGHT);
+        ctx.stroke();
+    }
+}
+
+function drawStage11Background() {
+    // Cosmic background
+    ctx.fillStyle = '#000010'; // Very dark blue, almost black
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    // Stars
+    for (let i = 0; i < 100; i++) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.8})`;
+        ctx.beginPath();
+        ctx.arc(Math.random() * STAGE_WIDTH, Math.random() * STAGE_HEIGHT, Math.random() * 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Ground
+    ctx.fillStyle = '#200020';
     ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
 }
 
 
+// --- UI 그리기 ---
 function drawStageUI() {
-    ctx.fillStyle = 'gray'; ctx.fillRect(10, 10, 200, 20);
-    ctx.fillStyle = 'yellow'; ctx.fillRect(10, 10, ultimateGauge * 2, 20);
-    ctx.strokeStyle = 'white'; ctx.strokeRect(10, 10, 200, 20);
-    ctx.fillStyle = 'white'; ctx.font = '20px Arial';
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText(`HP: ${player.hp}/${player.maxHp}`, 20, 30);
+    ctx.fillText(`코인: ${player.coins}`, 20, 60);
+    ctx.fillText(`스테이지: ${stage}`, 20, 90);
+    ctx.fillText(`포션: ${player.inventory.potions} (P 키)`, 20, 120);
 
-    const currentStageData = stages[stage - 1];
-    if (currentStageData.type === 'kill') {
-        ctx.fillText(`Kills: ${player.enemyKillCount} / ${currentStageData.killGoal}`, STAGE_WIDTH / 2 - 50, 30);
-    } else if (stage !== 7) {
-        const minutes = Math.floor(gameTimer / 60), seconds = Math.floor(gameTimer % 60);
-        ctx.fillText(`${minutes}:${seconds.toString().padStart(2, '0')}`, STAGE_WIDTH - 70, 30);
-    }
-    
-    ctx.fillText(`Stage: ${stage}`, 10, 30);
-    if (stage === 7) {
-        ctx.fillText(`마을 방문 가능: ${villageVisitCount}번`, STAGE_WIDTH / 2 - 100, 60);
-        if (boss) {
-            let bossName = `Boss ${currentBossIndex + 1}`;
-            if (currentBossIndex === stage7BossRush.length - 1) {
-                bossName = "FINAL BOSS";
-            }
-            if (isFightingHiddenBoss) {
-                bossName = "???";
-            }
-            ctx.fillText(bossName, STAGE_WIDTH / 2 - 50, 30);
-        }
-    }
-    ctx.fillStyle = 'red';
-    for (let i = 0; i < player.hp; i++) ctx.fillRect(10 + i * 35, 40, 30, 30);
-    ctx.fillStyle = 'gold'; ctx.fillText(`Coins: ${player.coins}`, 10, 100);
-    ctx.fillStyle = 'lightblue'; ctx.fillText(`Potions: ${player.inventory.potions} (P)`, 10, 130);
-    if (quest.isActive && !quest.isComplete) {
-        ctx.fillStyle = 'orange';
-        ctx.fillText(`${quest.title}: ${player.enemyKillCount} / ${quest.goal}`, 10, 160);
-    }
+    // 필살기 게이지
+    ctx.fillStyle = 'gray'; ctx.fillRect(20, 140, 200, 20);
+    ctx.fillStyle = 'yellow'; ctx.fillRect(20, 140, ultimateGauge * 2, 20);
+    ctx.strokeStyle = 'white'; ctx.strokeRect(20, 140, 200, 20);
+    ctx.fillStyle = 'white'; ctx.font = '14px Arial';
+    ctx.fillText('필살기 (M)', 230, 155);
+
+    // 보스 HP
     if (isBossFight && boss) {
-        ctx.fillStyle = 'gray'; ctx.fillRect(STAGE_WIDTH / 2 - 150, 10, 300, 20);
-        ctx.fillStyle = 'red'; ctx.fillRect(STAGE_WIDTH / 2 - 150, 10, (boss.hp / boss.maxHp) * 300, 20);
-        ctx.strokeStyle = 'white'; ctx.strokeRect(STAGE_WIDTH / 2 - 150, 10, 300, 20);
+        ctx.fillStyle = 'gray'; ctx.fillRect(STAGE_WIDTH / 2 - 200, 20, 400, 20);
+        ctx.fillStyle = 'red'; ctx.fillRect(STAGE_WIDTH / 2 - 200, 20, (boss.hp / boss.maxHp) * 400, 20);
+        ctx.strokeStyle = 'white'; ctx.strokeRect(STAGE_WIDTH / 2 - 200, 20, 400, 20);
     }
-    ctx.fillStyle = '#888'; ctx.fillRect(STAGE_WIDTH - 120, 10, 110, 30);
-    ctx.fillStyle = 'white'; ctx.font = '16px Arial'; ctx.fillText('마을로 가기', STAGE_WIDTH - 110, 30);
 
-    // Credit text
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'right';
-    ctx.fillText('승재가 만듬', STAGE_WIDTH - 10, STAGE_HEIGHT - 10);
-    ctx.textAlign = 'left'; // Reset alignment
+    // 스테이지 목표
+    const currentStageData = stages[stage - 1];
+    if (currentStageData.type === 'kill' && !isBossFight) {
+        ctx.font = '24px Arial';
+        ctx.fillText(`남은 적: ${currentStageData.killGoal - player.enemyKillCount}`, STAGE_WIDTH / 2 - 80, 60);
+    } else if (currentStageData.type === 'survival' && !isBossFight) {
+        ctx.font = '24px Arial';
+        const timeLeft = Math.max(0, currentStageData.survivalTime - gameTimer).toFixed(1);
+        ctx.fillText(`생존 시간: ${timeLeft}`, STAGE_WIDTH / 2 - 80, 60);
+    }
+
+    // 마을 가기 버튼
+    ctx.fillStyle = '#aaa';
+    ctx.fillRect(STAGE_WIDTH - 120, 10, 110, 30);
+    ctx.fillStyle = 'black';
+    ctx.font = '16px Arial';
+    ctx.fillText('마을로 돌아가기', STAGE_WIDTH - 115, 30);
 }
 
 // --- 마을 로직 ---
 function updateVillageLogic() {
     player.update();
-    player.crouch(keys.down);
     if (keys.e) {
-        if (activeUI) { activeUI = null; }
-        else {
-            if (isColliding(player, npcs.villageChief)) activeUI = 'quest';
-            else if (isColliding(player, npcs.merchant)) activeUI = 'shop';
-            else if (isColliding(player, npcs.radio)) toggleRadio();
+        if (isColliding(player, npcs.villageChief)) activeUI = 'quest';
+        else if (isColliding(player, npcs.merchant)) activeUI = 'shop';
+        else if (isColliding(player, npcs.radio)) {
+            if (!isFightingHiddenBoss) {
+                const answer = prompt("비밀 코드를 입력하십시오.");
+                if (answer === "seungjae") {
+                    alert("히든 스테이지가 개방됩니다.");
+                    goToStage();
+                    setTimeout(createHiddenBoss, 1000);
+                } else {
+                    alert("코드가 틀렸습니다.");
+                }
+            }
         }
         keys.e = false;
     }
 }
 
 function drawVillage() {
-    ctx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
-    // 아파트 배경 그리기
-    ctx.fillStyle = '#1e272e'; // 밤하늘
-    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
-    for(let i = 0; i < 5; i++) {
-        const aptX = i * 200 - (backgroundX * 0.1 % 200);
-        const aptHeight = 200 + Math.sin(i) * 50;
-        ctx.fillStyle = '#34495e';
-        ctx.fillRect(aptX, STAGE_HEIGHT - GROUND_HEIGHT - aptHeight, 150, aptHeight);
-        // 창문
-        ctx.fillStyle = '#f1c40f';
-        for(let y = 0; y < aptHeight - 30; y += 40) {
-            for(let x = 0; x < 120; x += 40) {
-                if(Math.random() > 0.3) {
-                     ctx.fillRect(aptX + 15 + x, STAGE_HEIGHT - GROUND_HEIGHT - aptHeight + 20 + y, 20, 20);
-                }
-            }
-        }
-    }
-
-
-    ctx.fillStyle = '#664422'; ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
-    ctx.fillStyle = npcs.villageChief.color; ctx.fillRect(npcs.villageChief.x, npcs.villageChief.y, npcs.villageChief.width, npcs.villageChief.height);
-    ctx.fillStyle = 'white'; ctx.fillText('이장', npcs.villageChief.x + 10, npcs.villageChief.y - 10);
-    ctx.fillStyle = npcs.merchant.color; ctx.fillRect(npcs.merchant.x, npcs.merchant.y, npcs.merchant.width, npcs.merchant.height);
-    ctx.fillStyle = 'white'; ctx.fillText('상인', npcs.merchant.x + 10, npcs.merchant.y - 10);
-    
-    // 라디오 그리기
-    const radio = npcs.radio;
-    ctx.fillStyle = radio.color; 
-    ctx.fillRect(radio.x, radio.y, radio.width, radio.height);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(radio.x + 5, radio.y + 5, radio.width - 10, 10);
-    ctx.fillStyle = 'white';
-    ctx.font = '12px Arial';
-    ctx.fillText('라디오', radio.x, radio.y - 5);
-
+    drawVillageBackground();
     player.draw();
-    ctx.fillStyle = 'white'; ctx.font = '20px Arial';
-    ctx.fillText('마을 (E키로 상호작용)', 20, 60);
-    ctx.fillText(`Coins: ${player.coins}`, 20, 90);
-    ctx.fillStyle = '#888';
+    Object.values(npcs).forEach(npc => {
+        ctx.fillStyle = npc.color;
+        ctx.fillRect(npc.x, npc.y, npc.width, npc.height);
+    });
+
+    // UI
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText('마을', STAGE_WIDTH / 2 - 30, 30);
+
+    // 상호작용 텍스트
+    if (isColliding(player, npcs.villageChief)) showInteractionText('촌장에게 말을 건다 (E)');
+    if (isColliding(player, npcs.merchant)) showInteractionText('상점을 연다 (E)');
+    if (isColliding(player, npcs.radio)) showInteractionText('라디오를 조사한다 (E)');
+
+    // 메뉴/스테이지 이동 버튼
+    ctx.fillStyle = '#aaa';
     ctx.fillRect(20, 10, 120, 30);
     ctx.fillRect(STAGE_WIDTH - 140, 10, 120, 30);
-    ctx.fillStyle = 'white'; ctx.font = '16px Arial';
-    ctx.fillText('메뉴로 가기', 30, 30);
-    ctx.fillText('스테이지로 가기', STAGE_WIDTH - 130, 30);
+    ctx.fillStyle = 'black';
+    ctx.font = '16px Arial';
+    ctx.fillText('필살기 메뉴 가기', 25, 30);
+    ctx.fillText('스테이지 가기', STAGE_WIDTH - 130, 30);
 }
 
-// --- UI 로직 (퀘스트, 상점) ---
-function drawQuestUI() {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(200, 150, 400, 200);
-    ctx.fillStyle = 'white'; ctx.font = '20px Arial'; ctx.textAlign = 'center';
-    ctx.fillText('이장의 퀘스트', 400, 180);
-    if (!quest.isActive) {
-        ctx.fillText(quest.title, 400, 220);
-        ctx.fillText(`보상: ${quest.reward} 코인`, 400, 250);
-        ctx.fillStyle = '#8f8'; ctx.fillRect(350, 280, 100, 30);
-        ctx.fillStyle = 'black'; ctx.fillText('수락', 400, 300);
-    } else if (player.enemyKillCount < quest.goal) {
-        ctx.fillText(`진행 상황: ${player.enemyKillCount} / ${quest.goal}`, 400, 220);
-    } else {
-        ctx.fillText('퀘스트 완료! 보상을 받으세요.', 400, 250);
-        if (!quest.isComplete) { 
-            quest.isComplete = true;
-            player.coins += quest.reward;
-        }
-    }
-    ctx.font = '16px Arial'; ctx.fillText('(E키를 누르면 닫기)', 400, 340);
+function drawVillageBackground() {
+    ctx.fillStyle = '#a0d9ef'; // 밝은 하늘
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    // 땅
+    ctx.fillStyle = '#79d70f';
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+    // 집
+    ctx.fillStyle = '#d2b48c';
+    ctx.fillRect(80, STAGE_HEIGHT - GROUND_HEIGHT - 150, 150, 150);
+    ctx.fillStyle = '#8b4513';
+    ctx.beginPath();
+    ctx.moveTo(60, STAGE_HEIGHT - GROUND_HEIGHT - 150);
+    ctx.lineTo(250, STAGE_HEIGHT - GROUND_HEIGHT - 150);
+    ctx.lineTo(155, STAGE_HEIGHT - GROUND_HEIGHT - 220);
+    ctx.closePath();
+    ctx.fill();
+}
+
+function showInteractionText(text) {
+    ctx.fillStyle = 'black';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, STAGE_WIDTH / 2, STAGE_HEIGHT - 20);
     ctx.textAlign = 'left';
 }
 
+// --- 상점/퀘스트 UI ---
 function drawShopUI() {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; ctx.fillRect(200, 150, 400, 350);
-    ctx.fillStyle = 'white'; ctx.font = '24px Arial'; ctx.textAlign = 'center';
-    ctx.fillText('상점', 400, 180);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('상점', STAGE_WIDTH / 2, 80);
+    ctx.font = '16px Arial';
+    ctx.fillText('아이템을 클릭하여 구매하세요. (E를 눌러 닫기)', STAGE_WIDTH / 2, 120);
+    ctx.fillText(`내 코인: ${player.coins}`, STAGE_WIDTH / 2, 150);
 
-    let itemY = 220;
+    ctx.textAlign = 'left';
+    let itemY = 200;
+
     // 소모품
+    ctx.font = '20px Arial';
+    ctx.fillText('소모품', 250, itemY);
+    itemY += 20;
     const potion = shopConsumables.potion;
-    ctx.fillStyle = '#9f9'; ctx.fillRect(250, itemY, 300, 30);
-    ctx.fillStyle = 'black'; ctx.fillText(`${potion.name} (${potion.price} 코인)`, 400, itemY + 20);
+    ctx.strokeRect(250, itemY, 300, 30);
+    ctx.font = '16px Arial';
+    ctx.fillText(`${potion.name} - ${potion.price} 코인`, 260, itemY + 20);
     itemY += 60;
 
     // 필살기
-    ctx.fillStyle = 'white'; ctx.fillText('--- 필살기 해금 ---', 400, itemY - 10);
+    ctx.font = '20px Arial';
+    ctx.fillText('필살기', 250, itemY);
+    itemY += 20;
     Object.keys(ultimates).forEach(id => {
         const ult = ultimates[id];
-        if (ult.price > 0) {
-            if (ult.purchased) {
-                ctx.fillStyle = '#555';
-                ctx.fillRect(250, itemY, 300, 30);
-                ctx.fillStyle = '#aaa';
-                ctx.fillText(`${ult.name} (보유 중)`, 400, itemY + 20);
-            } else {
-                ctx.fillStyle = '#aaf';
-                ctx.fillRect(250, itemY, 300, 30);
-                ctx.fillStyle = 'white';
-                ctx.fillText(`${ult.name} (${ult.price} 코인)`, 400, itemY + 20);
-            }
+        if (ult.price > 0) { // 가격이 0 이상인 것만 표시
+            ctx.globalAlpha = ult.purchased ? 0.5 : 1.0;
+            ctx.strokeRect(250, itemY, 300, 30);
+            ctx.font = '16px Arial';
+            const text = ult.purchased ? `${ult.name} (보유중)` : `${ult.name} - ${ult.price} 코인`;
+            ctx.fillText(text, 260, itemY + 20);
             itemY += 40;
+            ctx.globalAlpha = 1.0;
         }
     });
-    ctx.font = '16px Arial'; ctx.fillText('(클릭하여 구매, E키를 누르면 닫기)', 400, 530);
-    ctx.textAlign = 'left';
+
+    ctx.textAlign = 'center';
 }
 
-function drawRevivalScreen() {
-    ctx.fillStyle = 'white';
+function drawQuestUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
-    ctx.fillStyle = 'black';
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('퀘스트', STAGE_WIDTH / 2, 150);
+    ctx.font = '18px Arial';
+    ctx.fillText(quest.title, STAGE_WIDTH / 2, 200);
+    ctx.font = '16px Arial';
+    ctx.fillText(`보상: ${quest.reward} 코인`, STAGE_WIDTH / 2, 240);
+
+    if (!quest.isActive && !quest.isComplete) {
+        ctx.fillStyle = 'lightgreen';
+        ctx.fillRect(350, 280, 100, 30);
+        ctx.fillStyle = 'black';
+        ctx.fillText('수락', 400, 300);
+    } else if (quest.isActive) {
+        ctx.fillText('진행 중...', STAGE_WIDTH / 2, 300);
+    } else { // isComplete
+        ctx.fillText('완료!', STAGE_WIDTH / 2, 300);
+    }
+    ctx.textAlign = 'center';
+}
+
+// --- 부활 / 엔딩 화면 ---
+function drawRevivalScreen() {
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
     ctx.font = '40px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText("일어나! 토드! 넌 할수있어!", STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
+    ctx.fillText('당신은 쓰러졌습니다...', STAGE_WIDTH / 2, STAGE_HEIGHT / 2 - 50);
+    ctx.font = '24px Arial';
+    ctx.fillText(`마을로 돌아가 힘을 얻으시겠습니까? (${villageVisitCount}번 남음)`, STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
     ctx.font = '20px Arial';
-    ctx.fillText("(화면을 터치하여 부활)", STAGE_WIDTH / 2, STAGE_HEIGHT / 2 + 50);
+    ctx.fillText('(화면을 클릭하여 계속)', STAGE_WIDTH / 2, STAGE_HEIGHT / 2 + 50);
     ctx.textAlign = 'left';
 }
 
 function drawEndingScreen() {
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    const endingText = [
+        "모든 보스를 물리쳤다!",
+        "이제 이 공장은 평화롭게 ai를 만들 수 있을 것이다.",
+        "Tode z.m!",
+        "승재가 만듬",
+        "인기 좋으면 DIC버전이 나온다?!"
+    ];
+
     ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
     ctx.font = '30px Arial';
     ctx.textAlign = 'center';
 
-    let text = "";
-    switch(endingPage) {
-        case 0: text = "그렇게 모든 보스를 쓰러뜨리고 멋진 ai가 되었다고 한다."; break;
-        case 1: text = "그 ai의 이름은...."; break;
-        case 2: text = "Tode z.m!"; break;
-        case 3: text = "승재가 만듬"; break;
-        case 4: text = "그 소리의 주인은...."; break;
-        case 5: text = "신의 목소리 였다고 한다...!"; break;
-        case 6: text = "게임을 한번더 플레이 하시겠습니까?"; break;
+    if (endingPage < endingText.length) {
+        ctx.fillText(endingText[endingPage], STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
     }
 
-    ctx.fillText(text, STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
-
-    if (endingPage < 2 || endingPage === 6) {
-        ctx.font = '16px Arial';
-        ctx.fillText('(화면을 터치하여 계속)', STAGE_WIDTH / 2, STAGE_HEIGHT - 50);
-    }
+    ctx.font = '16px Arial';
+    ctx.fillText('(화면을 터치하여 계속)', STAGE_WIDTH / 2, STAGE_HEIGHT - 50);
     ctx.textAlign = 'left';
+}
+
+function createSharkBoss() {
+    // This is for stage 8, the diamond world
+    boss = {
+        x: -100, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 120, height: 60,
+        hp: 100, maxHp: 100,
+        speed: 8,
+        draw() {
+            ctx.fillStyle = '#95a5a6';
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y + this.height / 2);
+            ctx.lineTo(this.x + this.width, this.y);
+            ctx.lineTo(this.x + this.width, this.y + this.height);
+            ctx.closePath();
+            ctx.fill();
+            // Fin
+            ctx.beginPath();
+            ctx.moveTo(this.x + this.width / 2, this.y);
+            ctx.lineTo(this.x + this.width / 2 + 20, this.y - 30);
+            ctx.lineTo(this.x + this.width / 2 + 40, this.y);
+            ctx.closePath();
+            ctx.fill();
+        },
+        update() {
+            this.x += this.speed;
+            if (this.x > STAGE_WIDTH) {
+                this.x = -this.width;
+                this.y = STAGE_HEIGHT - GROUND_HEIGHT - (Math.random() * 100 + 60);
+            }
+        }
+    };
+}
+
+function createGhostBoss() {
+    // This is for stage 9
+    boss = {
+        x: STAGE_WIDTH / 2 - 50, y: 100, width: 100, height: 150,
+        hp: 3000, maxHp: 3000,
+        attackCooldown: 90,
+        draw() {
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + 50, 50, Math.PI, 0);
+            ctx.lineTo(this.x + this.width, this.y + this.height);
+            ctx.lineTo(this.x, this.y + this.height);
+            ctx.closePath();
+            ctx.fill();
+            // Eyes
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(this.x + 35, this.y + 50, 10, 0, Math.PI * 2);
+            ctx.arc(this.x + 65, this.y + 50, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        },
+        update() {
+            this.x += Math.sin(frameCount * 0.05) * 5;
+            this.y += Math.cos(frameCount * 0.05) * 2;
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0) {
+                this.attackCooldown = 90;
+                // Create a wave of obstacles
+                for (let i = 0; i < 5; i++) {
+                    setTimeout(() => this.createObstacleWave(), i * 500);
+                }
+            }
+        },
+        createObstacleWave() {
+            if (!boss) return;
+            const fromLeft = Math.random() > 0.5;
+            obstacles.push({
+                x: fromLeft ? -50 : STAGE_WIDTH,
+                y: Math.random() * (STAGE_HEIGHT - GROUND_HEIGHT - 100) + 50,
+                width: 50, height: 50,
+                speed: fromLeft ? 5 : -5,
+                draw() {
+                    ctx.fillStyle = '#4b0082'; // Indigo
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                },
+                update() {
+                    this.x += this.speed;
+                }
+            });
+        }
+    };
+}
+
+function createRodyBoss() {
+    boss = {
+        x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 150, height: 200,
+        hp: 3500, maxHp: 3500,
+        attackCooldown: 120,
+        pattern: 0,
+        state: 'idle', // idle, dashing, shooting_punch, shooting_laser, pulling
+        stateTimer: 0,
+        eyeColor: 'yellow',
+        eyeFlashTimer: 15,
+        dashTargetX: 0,
+        dashSpeed: 20,
+        isPulling: false,
+
+        draw() {
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            // Eye color flash
+            this.eyeFlashTimer--;
+            if (this.eyeFlashTimer <= 0) {
+                this.eyeColor = this.eyeColor === 'yellow' ? '#00f' : 'yellow';
+                this.eyeFlashTimer = 15;
+            }
+
+            // Body
+            ctx.fillStyle = '#808080'; // Grey
+            ctx.fillRect(this.x, this.y, this.width, this.height - 20);
+
+            // Head
+            ctx.fillStyle = '#696969';
+            ctx.fillRect(centerX - 40, this.y - 30, 80, 30);
+
+            // Eyes
+            ctx.fillStyle = this.eyeColor;
+            ctx.beginPath();
+            ctx.arc(centerX - 20, this.y - 15, 10, 0, Math.PI * 2);
+            ctx.arc(centerX + 20, this.y - 15, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Limbs (simple rectangles)
+            ctx.fillStyle = '#505050';
+            // Arms
+            ctx.fillRect(this.x - 20, this.y + 20, 20, 100);
+            ctx.fillRect(this.x + this.width, this.y + 20, 20, 100);
+            // Legs
+            ctx.fillRect(this.x + 20, this.y + this.height - 20, 30, 50);
+            ctx.fillRect(this.x + this.width - 50, this.y + this.height - 20, 30, 50);
+        },
+        update() {
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0 && this.state === 'idle') {
+                this.pattern = Math.floor(Math.random() * 4);
+                this.state = 'acting';
+                switch (this.pattern) {
+                    case 0: // Dash
+                        this.stateTimer = 60; // 1 second dash duration
+                        this.dashTargetX = player.x;
+                        break;
+                    case 1: // Rocket Punch
+                        this.stateTimer = 120;
+                        this.attackCooldown = 180;
+                        break;
+                    case 2: // Laser
+                        this.stateTimer = 180;
+                        this.attackCooldown = 240;
+                        break;
+                    case 3: // Magnet Pull
+                        this.stateTimer = 300; // 5 seconds of pulling
+                        this.isPulling = true;
+                        this.attackCooldown = 360;
+                        break;
+                }
+            }
+
+            if (this.state === 'acting') {
+                this.stateTimer--;
+                switch (this.pattern) {
+                    case 0: // Dashing
+                        const direction = this.dashTargetX < this.x ? -1 : 1;
+                        this.x += this.dashSpeed * direction;
+                        if (isColliding(this, player)) {
+                            player.isSlowed = true;
+                            player.slowTimer = 180; // 3 seconds
+                        }
+                        // Stop dash if reached target or edge
+                        if ((direction > 0 && this.x >= this.dashTargetX) || (direction < 0 && this.x <= this.dashTargetX) || this.x < 0 || this.x > STAGE_WIDTH - this.width) {
+                             this.state = 'idle';
+                        }
+                        break;
+                    case 1: // Rocket Punch
+                        if (this.stateTimer % 40 === 0) this.shootRocketPunch();
+                        break;
+                    case 2: // Laser
+                        if (this.stateTimer % 30 === 0) this.shootMultiLaser();
+                        break;
+                    case 3: // Magnet Pull
+                        if (this.isPulling) {
+                            const dx = (this.x + this.width / 2) - (player.x + player.width / 2);
+                            const dy = (this.y + this.height / 2) - (player.y + player.height / 2);
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            if (distance > 50) { // Don't pull if too close
+                                player.x += dx / distance * 3; // Pull force
+                            }
+                        }
+                        break;
+                }
+
+                if (this.stateTimer <= 0) {
+                    this.state = 'idle';
+                    this.isPulling = false; // Make sure to stop pulling
+                    this.attackCooldown = 120;
+                }
+            }
+        },
+        shootRocketPunch() {
+            if (!boss) return;
+            const punchY = this.y + 40;
+            const fromLeft = player.x < this.x;
+            bossProjectiles.push({
+                x: fromLeft ? this.x - 20 : this.x + this.width,
+                y: punchY,
+                width: 40, height: 20,
+                speed: 8,
+                direction: fromLeft ? 'left' : 'right',
+                type: 'punch',
+                draw() {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                },
+                update() {
+                    this.x += this.direction === 'right' ? this.speed : -this.speed;
+                }
+            });
+        },
+        shootMultiLaser() {
+            if (!boss) return;
+            for(let i=0; i<3; i++) {
+                const angle = Math.atan2((player.y + player.height/2) - (this.y + 20), (player.x + player.width/2) - (this.x + this.width/2)) + (Math.random() - 0.5);
+                bossProjectiles.push({
+                    x: this.x + this.width / 2, y: this.y + 20, width: 10, height: 10, speed: 6, angle: angle, type: 'laser',
+                    draw() { ctx.fillStyle = 'orange'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+                    update(speedMultiplier = 1) { this.x += Math.cos(this.angle) * this.speed * speedMultiplier; this.y += Math.sin(this.angle) * this.speed * speedMultiplier; }
+                });
+            }
+        }
+    };
+}
+
+function createStage11Boss() {
+    boss = {
+        x: STAGE_WIDTH / 2 - 75, y: 150, width: 150, height: 150,
+        hp: 4000, maxHp: 4000,
+        attackCooldown: 120,
+        pattern: 0,
+        state: 'idle', // idle, laser_barrage, summon_strike, flamethrower
+        stateTimer: 0,
+
+        draw() {
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            // Body
+            ctx.fillStyle = '#8A2BE2'; // Purple
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eyes
+            ctx.fillStyle = '#ADFF2F'; // Green-Yellow
+            // Left Eye
+            ctx.beginPath();
+            ctx.arc(centerX - 30, centerY, 20, 0, Math.PI * 2);
+            ctx.fill();
+            // Right Eye
+            ctx.beginPath();
+            ctx.arc(centerX + 30, centerY, 20, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Pupils
+            ctx.fillStyle = 'black';
+            // Left Pupil
+            ctx.beginPath();
+            ctx.arc(centerX - 30, centerY, 8, 0, Math.PI * 2);
+            ctx.fill();
+            // Right Pupil
+            ctx.beginPath();
+            ctx.arc(centerX + 30, centerY, 8, 0, Math.PI * 2);
+            ctx.fill();
+        },
+        update() {
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0 && this.state === 'idle') {
+                this.pattern = Math.floor(Math.random() * 3);
+                this.state = 'acting';
+                switch (this.pattern) {
+                    case 0: // Laser Barrage
+                        this.stateTimer = 260; // Needs time for all lasers
+                        this.attackCooldown = 300;
+                        this.shootLaserBarrage();
+                        break;
+                    case 1: // Summon and Strike
+                        this.stateTimer = 120;
+                        this.attackCooldown = 240;
+                        this.summonAndStrike();
+                        break;
+                    case 2: // Flamethrower
+                        this.stateTimer = 300; // 5 seconds
+                        this.attackCooldown = 360;
+                        break;
+                }
+            }
+
+            if (this.state === 'acting') {
+                this.stateTimer--;
+                if (this.pattern === 2) { // Flamethrower logic
+                    this.flamethrower();
+                }
+
+                if (this.stateTimer <= 0) {
+                    this.state = 'idle';
+                    this.attackCooldown = 120;
+                }
+            }
+        },
+        shootLaserBarrage() {
+            if (!boss) return;
+            // 18 horizontal lasers
+            for (let i = 0; i < 18; i++) {
+                setTimeout(() => {
+                    if (!boss) return;
+                    bossProjectiles.push({
+                        x: 0, y: Math.random() * (STAGE_HEIGHT - GROUND_HEIGHT),
+                        width: STAGE_WIDTH, height: 5, timer: 20, type: 'wide_laser',
+                        draw() { ctx.fillStyle = `rgba(255, 100, 255, ${0.2 + (this.timer / 20) * 0.6})`; ctx.fillRect(this.x, this.y, this.width, this.height); },
+                        update() { this.timer--; if (this.timer <= 0) { const index = bossProjectiles.indexOf(this); if (index > -1) bossProjectiles.splice(index, 1); } }
+                    });
+                }, i * 100);
+            }
+            // 8 vertical lasers
+            for (let i = 0; i < 8; i++) {
+                setTimeout(() => {
+                    if (!boss) return;
+                    createLightningZone(Math.random() * STAGE_WIDTH);
+                }, i * 200 + 500); // Stagger them after horizontal
+            }
+        },
+        summonAndStrike() {
+            if (!boss) return;
+            // Summon 5 enemies
+            for (let i = 0; i < 5; i++) {
+                createEnemy();
+            }
+            // Random lightning
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => createLightningZone(Math.random() * STAGE_WIDTH), i * 300);
+            }
+        },
+        flamethrower() {
+            if (!boss) return;
+            const angleToPlayer = Math.atan2((player.y + player.height / 2) - (this.y + this.height / 2), (player.x + player.width / 2) - (this.x + this.width / 2));
+            for (let i = 0; i < 3; i++) {
+                const spread = (Math.random() - 0.5) * 0.5;
+                particles.push({
+                    x: this.x + this.width / 2, y: this.y + this.height / 2,
+                    dx: Math.cos(angleToPlayer + spread) * 8,
+                    dy: Math.sin(angleToPlayer + spread) * 8,
+                    radius: Math.random() * 10 + 5,
+                    color: `rgba(255, ${Math.random() * 100}, 0, 0.8)`,
+                    life: 40,
+                    startLife: 40,
+                    isFire: true, // Custom property for collision
+                });
+            }
+        }
+    };
+}
+
+// ====================================================================
+//                         게임 오버 및 다음 스테이지
+// ====================================================================
+function gameOver() {
+    if (villageVisitCount > 0) {
+        gameState = 'reviving';
+    } else {
+        alert('게임 오버!');
+        document.location.reload();
+    }
+}
+
+function nextStage() {
+    stage++;
+    if (stage > stages.length) {
+        gameState = 'ending';
+        return;
+    }
+    resetStage();
+    if (stage === 7 || stage === 10 || stage === 11) {
+        isBossFight = true;
+        stages[stage - 1].createBoss();
+    }
+}
+
+function resetStage() {
+    player.x = 100;
+    player.y = STAGE_HEIGHT - GROUND_HEIGHT - player.height;
+    player.enemyKillCount = 0;
+    enemies.length = 0;
+    bossProjectiles.length = 0;
+    lightningZones.length = 0;
+    residualElectrics.length = 0;
+    fires.length = 0;
+    bubbles.length = 0;
+    obstacles.length = 0;
+    boss = null;
+    isBossFight = false;
+    gameTimer = 0;
+    isGroundSlippery = false;
+    isFightingHiddenBoss = false;
+    isSpawningNextBoss = false;
+}
+
+function startDiamondStage() {
+    stage = 8;
+    resetStage();
+}
+
+function goToVillage() {
+    gameState = 'village';
+    stopBGM();
+}
+
+function goToMenu() {
+    gameState = 'menu';
+    stopBGM();
+}
+
+function goToStage() {
+    gameState = 'stage';
+    resetStage();
+    if (stage === 7 || stage === 10 || stage === 11) {
+        isBossFight = true;
+        stages[stage - 1].createBoss();
+    }
+    playBGM(stage);
+}
+
+function isColliding(rect1, rect2) {
+    return rect1.x < rect2.x + rect2.width &&
+           rect1.x + rect1.width > rect2.x &&
+           rect1.y < rect2.y + rect2.height &&
+           rect1.y + rect1.height > rect2.y;
 }
 
 function buyItem(item, id) {
     if (player.coins >= item.price) {
         player.coins -= item.price;
-        if(item.type === 'consumable') {
-            if(item.id === 'potion') player.inventory.potions++;
+        if (item.type === 'consumable') {
+            if (item.id === 'potion') player.inventory.potions++;
+            alert(`${item.name}을(를) 구매했습니다.`);
         } else if (item.type === 'ultimate') {
             ultimates[id].purchased = true;
+            alert(`${item.name}을(를) 구매했습니다.`);
         }
-        alert(`${item.name}을(를) 구매했습니다!`);
     } else {
         alert('코인이 부족합니다.');
     }
 }
 
 function acceptQuest() {
-    if (!quest.isActive) {
+    if (!quest.isActive && !quest.isComplete) {
         quest.isActive = true;
-        player.enemyKillCount = 0; // 퀘스트 수락 시 킬 카운트 초기화
-        alert('퀘스트를 수락했습니다.');
+        alert(`퀘스트 수락: ${quest.title}`);
         activeUI = null;
     }
 }
 
 // ====================================================================
-//                         게임 관리 함수
+//                         게임 루프
 // ====================================================================
-function isColliding(rect1, rect2) {
-    if (!rect1 || !rect2) return false;
-    return rect1.x < rect2.x + rect2.width && rect1.x + rect1.width > rect2.x &&
-           rect1.y < rect2.y + rect2.height && rect1.y + rect1.height > rect2.y;
-}
-
-let audioCtx;
-let isRadioPlaying = false;
-
-function playRecorderSound() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (isRadioPlaying) {
-        isRadioPlaying = false;
-        return;
-    }
-    isRadioPlaying = true;
-
-    const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25]; // C4 to C5
-    let noteIndex = 0;
-
-    function playNote() {
-        if (!isRadioPlaying || noteIndex >= notes.length) {
-            isRadioPlaying = false;
-            return;
-        }
-
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-
-        oscillator.type = 'sine'; // 리코더와 비슷한 음색
-        oscillator.frequency.setValueAtTime(notes[noteIndex], audioCtx.currentTime);
-        
-        const noise = audioCtx.createBufferSource();
-        const bufferSize = audioCtx.sampleRate * 0.5; 
-        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = Math.random() * 0.02 - 0.01;
-        }
-        noise.buffer = buffer;
-        noise.loop = true;
-
-        gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
-
-        oscillator.connect(gainNode);
-        noise.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.5);
-        noise.start();
-        noise.stop(audioCtx.currentTime + 0.5);
-
-        noteIndex++;
-        setTimeout(playNote, 300); 
-    }
-
-    playNote();
-}
-
-function toggleRadio() {
-    playRecorderSound();
-}
-
-function nextStage() {
-    // 스테이지 7 보스 러쉬 클리어 후 히든 보스 등장
-    if (stage === 7 && !isFightingHiddenBoss) {
-        isFightingHiddenBoss = true;
-        isBossFight = true;
-        boss = null;
-        enemies.length = 0;
-        bossProjectiles.length = 0;
-        lightningZones.length = 0;
-        residualElectrics.length = 0;
-        bubbles.length = 0;
-        fires.length = 0;
-        isGroundSlippery = false;
-        player.enemyKillCount = 0;
-
-        stopBGM();
-        setTimeout(createHiddenBoss, 1000);
-        return;
-    }
-
-    // 히든 보스 클리어 후 진엔딩
-    if (isFightingHiddenBoss) {
-        gameState = 'ending';
-        endingPage = 0;
-        stopBGM();
-        return;
-    }
-
-    stage++;
-    if (stage > stages.length) {
-        alert("축하합니다! 모든 스테이지를 클리어했습니다!");
-        goToMenu();
-        stage = 1; // 다시 시작
-        villageVisitCount = 3; // 7스테이지 재도전을 위해 초기화
-        return;
-    }
-
-    isBossFight = false;
-    boss = null;
-    gameTimer = 0;
-    enemies.length = 0;
-    bossProjectiles.length = 0;
-    lightningZones.length = 0;
-    residualElectrics.length = 0;
-    bubbles.length = 0;
-    fires.length = 0;
-    isGroundSlippery = false;
-    if (!quest.isActive) {
-        player.enemyKillCount = 0;
-    }
-    
-    alert(`Stage ${stage} Start!`);
-    goToStage();
-}
-
-function goToMenu() { 
-    gameState = 'menu'; 
-    activeUI = null; 
-    stopBGM();
-}
-function goToVillage() { 
-    if (stage === 7) {
-        if (villageVisitCount > 0) {
-            villageVisitCount--;
-            gameState = 'village';
-            activeUI = null;
-            stopBGM();
-            if (villageVisitCount === 0) {
-                alert("이제 더 이상 마을로 돌아갈 수 없습니다.");
-            }
-        } else {
-            alert("마을로 돌아갈 수 없습니다.");
-            return;
-        }
-    } else {
-        gameState = 'village'; 
-        activeUI = null; 
-        stopBGM();
-    }
-}
-function goToStage() { 
-    gameState = 'stage'; 
-    gameTimer = 0; 
-    player.x = 100; 
-    player.y = STAGE_HEIGHT - GROUND_HEIGHT - 100; 
-    activeUI = null; 
-    playBGM(stage);
-    isSpawningNextBoss = false;
-    const currentStageData = stages[stage - 1];
-    if(currentStageData.type === 'boss' && currentStageData.bossSpawnTime === 0) {
-        isBossFight = true;
-        boss = null; // 보스 초기화
-        enemies.length = 0;
-        bossProjectiles.length = 0;
-        currentStageData.createBoss();
-    }
-}
-function gameOver() {
-    if (isFightingHiddenBoss) {
-        gameState = 'reviving';
-    } else {
-        alert("Game Over");
-        document.location.reload();
-    }
-}
-
 function gameLoop() {
-    frameCount++;
     updateLogic();
     draw();
+    frameCount++;
     requestAnimationFrame(gameLoop);
 }
 
+// 게임 시작
 gameLoop();
