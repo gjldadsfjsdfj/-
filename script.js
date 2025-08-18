@@ -36,6 +36,8 @@ let isSpawningNextBoss = false;
 let isFightingHiddenBoss = false;
 let isPoweredUp = false;
 let powerUpTimer = 0;
+let numberInputSequence = ''; // '1010' 입력을 위한 변수
+let showNumberInput = false; // 입력된 숫자를 화면에 표시할지 여부
 
 // --- 리소스 관리 ---
 const lasers = [];

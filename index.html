@@ -7,11 +7,22 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Cutting Time!</h1>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <audio id="bgm" loop>
-        <!-- 실제 음악 파일 경로를 여기에 넣으세요. 예: <source src="music.mp3" type="audio/mpeg"> -->
-    </audio>
+    <div id="login-container">
+        <h1>Cutting Time!</h1>
+        <input type="text" id="username" placeholder="아이디">
+        <input type="password" id="password" placeholder="비밀번호">
+        <button id="login-btn">로그인</button>
+        <button id="register-btn">회원가입</button>
+    </div>
+
+    <div id="game-container" style="display: none;">
+        <h1>Cutting Time!</h1>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <audio id="bgm" loop>
+            <!-- 실제 음악 파일 경로를 여기에 넣으세요. 예: <source src="music.mp3" type="audio/mpeg"> -->
+        </audio>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
