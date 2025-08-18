@@ -1,3 +1,71 @@
+// --- LOGIN/REGISTRATION LOGIC ---
+const loginContainer = document.getElementById('login-container');
+const gameContainer = document.getElementById('game-container');
+const usernameInput = document.getElementById('username');
+const passwordInput = document.getElementById('password');
+const loginBtn = document.getElementById('login-btn');
+const registerBtn = document.getElementById('register-btn');
+
+// Function to show the game and hide the login screen
+function showGame() {
+    loginContainer.style.display = 'none';
+    gameContainer.style.display = 'block';
+    gameLoop(); // Start the game
+}
+
+// Handle registration
+registerBtn.addEventListener('click', () => {
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
+
+    if (!username || !password) {
+        alert('아이디와 비밀번호를 모두 입력해주세요.');
+        return;
+    }
+
+    // Get existing users from localStorage, or create a new object
+    const users = JSON.parse(localStorage.getItem('game_users')) || {};
+
+    if (users[username]) {
+        alert('이미 존재하는 아이디입니다.');
+    } else {
+        users[username] = password;
+        localStorage.setItem('game_users', JSON.stringify(users));
+        alert('회원가입이 완료되었습니다. 이제 로그인해주세요.');
+    }
+});
+
+// Handle login
+loginBtn.addEventListener('click', () => {
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
+
+    if (!username || !password) {
+        alert('아이디와 비밀번호를 모두 입력해주세요.');
+        return;
+    }
+
+    const users = JSON.parse(localStorage.getItem('game_users')) || {};
+
+    if (users[username] && users[username] === password) {
+        // Save login state for the session
+        sessionStorage.setItem('loggedInUser', username);
+        alert('로그인 성공!');
+        showGame();
+    } else {
+        alert('아이디 또는 비밀번호가 일치하지 않습니다.');
+    }
+});
+
+// Check login status on page load
+function checkLoginStatus() {
+    const loggedInUser = sessionStorage.getItem('loggedInUser');
+    if (loggedInUser) {
+        showGame();
+    }
+}
+// --- END LOGIN/REGISTRATION LOGIC ---
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -1417,7 +1485,7 @@ function handleMouseClick(e) {
         if (isColliding(mousePos, acceptButton)) acceptQuest();
     }
 }
-document.addEventListener('click', handleMouseClick);
+canvas.addEventListener('click', handleMouseClick);
 
 
 // ====================================================================
@@ -2830,4 +2898,4 @@ function gameLoop() {
 }
 
 // 게임 시작
-gameLoop();
+checkLoginStatus();
