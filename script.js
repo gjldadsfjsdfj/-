@@ -74,6 +74,20 @@ const STAGE_WIDTH = canvas.width;
 const STAGE_HEIGHT = canvas.height;
 const GROUND_HEIGHT = 50;
 
+// 다른 마을에 사람 NPC 정의
+let villagePerson = {
+    x: 450, // 라디오 옆에 위치
+    y: STAGE_HEIGHT - GROUND_HEIGHT - 70, // 라디오와 바닥 높이 맞춤
+    width: 30,
+    height: 50,
+    color: 'purple',
+    dialogue: "dic 버전 하고 싶다면 돈을 내세요. 지금 말고요. 언젠가요."
+};
+
+// 현재 표시될 대사와 타이머 변수
+let currentDialogue = '';
+let dialogueTimer = null;
+
 // --- 게임 상태 관리 ---
 let gameState = 'story'; // tutorial, menu, stage, village, ending, reviving
 let activeUI = null; // null, 'quest', 'shop'
@@ -1298,16 +1312,108 @@ function createDustEffect(x, y) {
 }
 
 function createSparkEffect(x, y) {
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) { // More particles
         particles.push({
             x: x, y: y,
-            dx: (Math.random() - 0.5) * 4,
-            dy: (Math.random() - 0.5) * 4,
-            radius: Math.random() * 2 + 1,
-            color: '#ffcc00',
-            life: 15,
-            startLife: 15
+            dx: (Math.random() - 0.5) * 6, // Faster, wider spread
+            dy: (Math.random() - 0.5) * 6,
+            radius: Math.random() * 4 + 2, // Larger sparks
+            color: '#ff4500', // Vibrant orange-red
+            life: 25, // Last longer
+            startLife: 25
         });
+    }
+}
+
+function createEnemyDeathEffect(x, y) {
+    for (let i = 0; i < 20; i++) { // Many particles for explosion
+        particles.push({
+            x: x, y: y,
+            dx: (Math.random() - 0.5) * 8, // Stronger outward burst
+            dy: (Math.random() - 0.5) * 8,
+            radius: Math.random() * 5 + 3, // Larger particles
+            color: `rgba(100, 100, 100, ${Math.random() * 0.5 + 0.5})`, // Greyish, fading
+            life: 40, // Last even longer
+            startLife: 40
+        });
+    }
+}
+
+function createPlayerExplosionEffect(x, y) {
+    for (let i = 0; i < 50; i++) { // Even more particles for player explosion
+        particles.push({
+            x: x, y: y,
+            dx: (Math.random() - 0.5) * 15, // Very strong outward burst
+            dy: (Math.random() - 0.5) * 15,
+            radius: Math.random() * 7 + 4, // Very large particles
+            color: `rgba(255, 100, 0, ${Math.random() * 0.5 + 0.5})`, // Fiery colors
+            life: 60, // Long lasting
+            startLife: 60
+        });
+    }
+}
+
+function updateGameOverAnimation() {
+    if (gameOverAnimationState.phase === 'explosion') {
+        gameOverAnimationState.timer--;
+        if (gameOverAnimationState.timer <= 0) {
+            gameOverAnimationState.phase = 'ascension';
+            gameOverAnimationState.timer = 180; // 3초간 상승
+            gameOverAnimationState.angelAlpha = 1; // 천사 투명도 1로 설정
+        }
+    } else if (gameOverAnimationState.phase === 'ascension') {
+        gameOverAnimationState.angelY -= 2; // 천사 상승 속도
+        gameOverAnimationState.timer--;
+        gameOverAnimationState.angelAlpha = Math.max(0, gameOverAnimationState.timer / 180); // 서서히 투명해짐
+
+        if (gameOverAnimationState.timer <= 0) {
+            // 애니메이션 종료 후 게임 재시작 또는 메뉴로 이동
+            document.location.reload(); // 게임 재시작
+        }
+    }
+}
+
+function drawGameOverAnimation() {
+    // 배경을 어둡게
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    if (gameOverAnimationState.phase === 'explosion') {
+        // 폭발 중에는 플레이어는 그리지 않음 (파티클이 대신함)
+    } else if (gameOverAnimationState.phase === 'ascension') {
+        // 천사 그리기
+        ctx.globalAlpha = gameOverAnimationState.angelAlpha;
+        ctx.fillStyle = 'white'; // 천사 색상
+        ctx.beginPath();
+        ctx.arc(gameOverAnimationState.playerX, gameOverAnimationState.angelY, 30, 0, Math.PI * 2); // 몸통
+        ctx.arc(gameOverAnimationState.playerX, gameOverAnimationState.angelY - 40, 20, 0, Math.PI * 2); // 머리
+        ctx.fill();
+
+        // 날개 (간단한 삼각형)
+        ctx.beginPath();
+        ctx.moveTo(gameOverAnimationState.playerX - 50, gameOverAnimationState.angelY - 20);
+        ctx.lineTo(gameOverAnimationState.playerX - 10, gameOverAnimationState.angelY);
+        ctx.lineTo(gameOverAnimationState.playerX - 50, gameOverAnimationState.angelY + 20);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(gameOverAnimationState.playerX + 50, gameOverAnimationState.angelY - 20);
+        ctx.lineTo(gameOverAnimationState.playerX + 10, gameOverAnimationState.angelY);
+        ctx.lineTo(gameOverAnimationState.playerX + 50, gameOverAnimationState.angelY + 20);
+        ctx.fill();
+
+        ctx.globalAlpha = 1.0; // 알파값 초기화
+    }
+
+    // 파티클은 항상 그림
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        ctx.globalAlpha = p.life / p.startLife;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
     }
 }
 
@@ -1376,7 +1482,28 @@ function handleKeyDown(e) {
     if (key === 'arrowup' || key === 'w') player.jump();
     if (key === '/') player.dash();
     if (key === ' ') { e.preventDefault(); player.shoot(); }
-    if (key === 'e') keys.e = true;
+    if (key === 'e') {
+        keys.e = true;
+        // 'E' 키로 NPC와 상호작용
+        // 플레이어와 NPC의 거리가 가까운지 확인
+        const distance = Math.sqrt(
+            Math.pow(player.x - villagePerson.x, 2) +
+            Math.pow(player.y - villagePerson.y, 2)
+        );
+        const interactionRange = 80; // 상호작용 범위
+
+        if (distance < interactionRange) {
+            currentDialogue = villagePerson.dialogue;
+            // 기존 타이머가 있다면 클리어
+            if (dialogueTimer) {
+                clearTimeout(dialogueTimer);
+            }
+            // 3초 후에 대사 사라지게 설정
+            dialogueTimer = setTimeout(() => {
+                currentDialogue = '';
+            }, 3000);
+        }
+    }
     if (key === 'p') player.usePotion();
     if (key === 'b') keys.b = true;
     if (key === 'm') {
@@ -1504,6 +1631,7 @@ function updateLogic() {
     else if (gameState === 'village') updateVillageLogic();
     else if (gameState === 'reviving') { /* Do nothing */ }
     else if (gameState === 'ending') { /* Do nothing */ }
+    else if (gameState === 'gameOverAnimation') updateGameOverAnimation(); // 게임 오버 애니메이션 업데이트
 }
 
 function draw() {
@@ -1515,6 +1643,7 @@ function draw() {
     else if (gameState === 'village') drawVillage();
     else if (gameState === 'reviving') drawRevivalScreen();
     else if (gameState === 'ending') drawEndingScreen();
+    else if (gameState === 'gameOverAnimation') drawGameOverAnimation(); // 게임 오버 애니메이션 그리기
 
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
@@ -1879,6 +2008,7 @@ function checkStageCollisions() {
                     player.hp = Math.min(player.maxHp, player.hp + 1);
                 }
                 createSparkEffect(laser.x, laser.y); // 스파크 효과
+                createEnemyDeathEffect(enemies[j].x + enemies[j].width / 2, enemies[j].y + enemies[j].height / 2); // 적 사망 효과
                 enemies.splice(j, 1);
                 lasers.splice(i, 1);
                 ultimateGauge = Math.min(100, ultimateGauge + 10);
@@ -2267,6 +2397,19 @@ function drawVillage() {
         ctx.fillStyle = npc.color;
         ctx.fillRect(npc.x, npc.y, npc.width, npc.height);
     });
+
+    // 다른 마을에 사람 NPC 그리기
+    ctx.fillStyle = villagePerson.color;
+    ctx.fillRect(villagePerson.x, villagePerson.y, villagePerson.width, villagePerson.height);
+
+    // 대사 표시
+    if (currentDialogue) {
+        ctx.fillStyle = 'white';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center'; // 대사 중앙 정렬
+        ctx.fillText(currentDialogue, villagePerson.x + villagePerson.width / 2, villagePerson.y - 10); // NPC 위에 대사 표시
+        ctx.textAlign = 'left'; // 기본값으로 되돌리기
+    }
 
     // UI
     ctx.fillStyle = 'white';
@@ -2791,14 +2934,43 @@ function createStage11Boss() {
 // ====================================================================
 //                         게임 오버 및 다음 스테이지
 // ====================================================================
-function gameOver() {
-    if (villageVisitCount > 0) {
-        gameState = 'reviving';
-    } else {
-        alert('게임 오버!');
-        document.location.reload();
+    // 게임 오버 애니메이션 상태 변수
+    let gameOverAnimationState = {
+        phase: 'explosion', // 'explosion', 'ascension'
+        timer: 120, // 폭발 애니메이션 지속 시간 (프레임)
+        playerX: 0,
+        playerY: 0,
+        angelY: 0, // 천사 이미지의 Y 위치
+        angelAlpha: 0 // 천사 이미지의 투명도
+    };
+
+    function gameOver() {
+        // 플레이어의 현재 위치 저장 (폭발 시작 지점)
+        gameOverAnimationState.playerX = player.x + player.width / 2;
+        gameOverAnimationState.playerY = player.y + player.height / 2;
+        gameOverAnimationState.angelY = gameOverAnimationState.playerY; // 초기 천사 위치
+        gameOverAnimationState.angelAlpha = 0; // 초기 투명도
+
+        // 폭발 효과 생성
+        createPlayerExplosionEffect(gameOverAnimationState.playerX, gameOverAnimationState.playerY);
+
+        // 게임 상태를 애니메이션으로 변경
+        gameState = 'gameOverAnimation';
+        gameOverAnimationState.phase = 'explosion';
+        gameOverAnimationState.timer = 120; // 2초 폭발
+
+        // 모든 게임 요소 정지 (선택 사항, 필요에 따라)
+        enemies.length = 0;
+        bossProjectiles.length = 0;
+        lightningZones.length = 0;
+        residualElectrics.length = 0;
+        fires.length = 0;
+        bubbles.length = 0;
+        obstacles.length = 0;
+        boss = null;
+        isBossFight = false;
+        // player.hp = 0; // 플레이어 HP 0으로 설정 (UI 표시용)
     }
-}
 
 function nextStage() {
     stage++;
