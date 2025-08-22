@@ -90,6 +90,7 @@ let dialogueTimer = null;
 
 // --- 게임 상태 관리 ---
 let gameState = 'story'; // tutorial, menu, stage, village, ending, reviving
+let previousGameState = '';
 let activeUI = null; // null, 'quest', 'shop'
 let storyPage = 0;
 let tutorialState = {
@@ -103,6 +104,8 @@ let tutorialState = {
     dashed: false
 };
 let endingPage = 0;
+let survivalWave = 0; // New global variable for survival wave
+let survivalScore = 0; // New global variable for survival score
 let stage = 1;
 let ultimateGauge = 0;
 let isUltimateActive = false;
@@ -289,6 +292,7 @@ const player = {
     gravity: 0.6,
     jumpPower: -15,
     isJumping: false,
+    canDoubleJump: true,
     isCrouching: false,
     direction: 'right',
     hp: 3,
@@ -487,18 +491,25 @@ const player = {
             this.isJumping = false;
             this.y = ground - this.height;
             this.dy = 0;
+            this.canDoubleJump = true; // Reset double jump on landing
         }
         if (this.x < 0) this.x = 0;
         if (this.x + this.width > STAGE_WIDTH) this.x = STAGE_WIDTH - this.width;
     },
 
-    jump() { 
-        if (!this.isJumping && !this.isCrouching) { 
+    jump() {
+        if (!this.isJumping && !this.isCrouching) { // First jump from ground
             playSound('jump');
-            this.isJumping = true; 
-            this.dy = this.jumpPower; 
+            this.isJumping = true;
+            this.dy = this.jumpPower;
             createDustEffect(this.x + this.width / 2, this.y + this.height);
-        } 
+            this.canDoubleJump = true; // Enable double jump after first jump
+        } else if (this.isJumping && this.canDoubleJump) { // Double jump in air
+            playSound('jump'); // Play jump sound again for double jump
+            this.dy = this.jumpPower * 0.8; // Slightly less powerful double jump
+            this.canDoubleJump = false; // Consume double jump
+            createDustEffect(this.x + this.width / 2, this.y + this.height); // Visual effect for double jump
+        }
     },
     crouch(isPressed) { 
         if (this.isJumping) return; 
@@ -580,9 +591,10 @@ const quest = {
 // --- 적/보스/NPC/발사체 생성 함수 ---
 function createEnemy() {
     const size = 40;
+    const fromLeft = Math.random() < 0.2; // 20% chance to spawn from the left
     const newEnemy = {
-        x: STAGE_WIDTH, y: STAGE_HEIGHT - GROUND_HEIGHT - size, width: size, height: size,
-        speed: (Math.random() * 2 + 1) * (1 + (stage - 1) * 0.1),
+        x: fromLeft ? 0 : STAGE_WIDTH, y: STAGE_HEIGHT - GROUND_HEIGHT - size, width: size, height: size,
+        speed: (Math.random() * 2 + 1) * (1 + (stage - 1) * 0.1) * (fromLeft ? -1 : 1),
         laserCooldown: (stage === 8) ? 300 : 0, // 5초 쿨다운 (60fps * 5)
         draw() { ctx.fillStyle = 'purple'; ctx.fillRect(this.x, this.y, this.width, this.height); },
         update(speedMultiplier = 1) { 
@@ -1367,8 +1379,11 @@ function updateGameOverAnimation() {
         gameOverAnimationState.angelAlpha = Math.max(0, gameOverAnimationState.timer / 180); // 서서히 투명해짐
 
         if (gameOverAnimationState.timer <= 0) {
-            // 애니메이션 종료 후 게임 재시작 또는 메뉴로 이동
-            document.location.reload(); // 게임 재시작
+            if (previousGameState === 'survival') {
+                goToVillage();
+            } else {
+                document.location.reload(); // 게임 재시작
+            }
         }
     }
 }
@@ -1450,7 +1465,7 @@ function createDashParticle(x, y) {
 
 const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
-    merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue' },
+    merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue', dialogue: "서바이벌 모드를 시작하시겠습니까? (E)" }, // Changed back to blue
     radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' }
 };
 
@@ -1486,19 +1501,31 @@ function handleKeyDown(e) {
         keys.e = true;
         // 'E' 키로 NPC와 상호작용
         // 플레이어와 NPC의 거리가 가까운지 확인
-        const distance = Math.sqrt(
+        const distanceVillagePerson = Math.sqrt(
             Math.pow(player.x - villagePerson.x, 2) +
             Math.pow(player.y - villagePerson.y, 2)
         );
+        const distanceMerchant = Math.sqrt( // New distance for merchant
+            Math.pow(player.x - npcs.merchant.x, 2) +
+            Math.pow(player.y - npcs.merchant.y, 2)
+        );
         const interactionRange = 80; // 상호작용 범위
 
-        if (distance < interactionRange) {
+        if (distanceVillagePerson < interactionRange) {
             currentDialogue = villagePerson.dialogue;
             // 기존 타이머가 있다면 클리어
             if (dialogueTimer) {
                 clearTimeout(dialogueTimer);
             }
             // 3초 후에 대사 사라지게 설정
+            dialogueTimer = setTimeout(() => {
+                currentDialogue = '';
+            }, 3000);
+        } else if (distanceMerchant < interactionRange) { // New condition for merchant
+            currentDialogue = npcs.merchant.dialogue;
+            if (dialogueTimer) {
+                clearTimeout(dialogueTimer);
+            }
             dialogueTimer = setTimeout(() => {
                 currentDialogue = '';
             }, 3000);
@@ -1610,6 +1637,15 @@ function handleMouseClick(e) {
     } else if (activeUI === 'quest') {
         const acceptButton = { x: 350, y: 280, width: 100, height: 30 };
         if (isColliding(mousePos, acceptButton)) acceptQuest();
+    } else if (activeUI === 'merchant_choice') {
+        const survivalButton = { x: STAGE_WIDTH / 2 - 150, y: 250, width: 300, height: 50 };
+        const shopButton = { x: STAGE_WIDTH / 2 - 150, y: 320, width: 300, height: 50 };
+
+        if (isColliding(mousePos, survivalButton)) {
+            startSurvivalMode();
+        } else if (isColliding(mousePos, shopButton)) {
+            activeUI = 'shop'; // Open the shop UI
+        }
     }
 }
 canvas.addEventListener('click', handleMouseClick);
@@ -1629,6 +1665,7 @@ function updateLogic() {
     else if (gameState === 'menu') updateMenuLogic();
     else if (gameState === 'stage') updateStageLogic();
     else if (gameState === 'village') updateVillageLogic();
+    else if (gameState === 'survival') updateSurvivalLogic();
     else if (gameState === 'reviving') { /* Do nothing */ }
     else if (gameState === 'ending') { /* Do nothing */ }
     else if (gameState === 'gameOverAnimation') updateGameOverAnimation(); // 게임 오버 애니메이션 업데이트
@@ -1641,12 +1678,14 @@ function draw() {
     else if (gameState === 'menu') drawMenu();
     else if (gameState === 'stage') drawStage();
     else if (gameState === 'village') drawVillage();
+    else if (gameState === 'survival') drawSurvival();
     else if (gameState === 'reviving') drawRevivalScreen();
     else if (gameState === 'ending') drawEndingScreen();
     else if (gameState === 'gameOverAnimation') drawGameOverAnimation(); // 게임 오버 애니메이션 그리기
 
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
+    else if (activeUI === 'merchant_choice') drawMerchantChoiceUI(); // New condition for merchant choice
 }
 
 // --- 스토리 로직 ---
@@ -2013,6 +2052,9 @@ function checkStageCollisions() {
                 lasers.splice(i, 1);
                 ultimateGauge = Math.min(100, ultimateGauge + 10);
                 player.coins += 10;
+                if (gameState === 'survival') {
+                    survivalScore += 10;
+                }
                 playSound('coin');
                 player.enemyKillCount++;
 
@@ -2373,7 +2415,9 @@ function updateVillageLogic() {
     player.update();
     if (keys.e) {
         if (isColliding(player, npcs.villageChief)) activeUI = 'quest';
-        else if (isColliding(player, npcs.merchant)) activeUI = 'shop';
+        else if (isColliding(player, npcs.merchant)) {
+            activeUI = 'merchant_choice'; // Set new UI state for merchant choice
+        }
         else if (isColliding(player, npcs.radio)) {
             if (!isFightingHiddenBoss) {
                 const answer = prompt("비밀 코드를 입력하십시오.");
@@ -2500,6 +2544,139 @@ function drawShopUI() {
     });
 
     ctx.textAlign = 'center';
+}
+
+function drawMerchantChoiceUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('상인', STAGE_WIDTH / 2, 150);
+    ctx.font = '20px Arial';
+    ctx.fillText('무엇을 도와드릴까요?', STAGE_WIDTH / 2, 200);
+
+    // Button for Survival Mode
+    const survivalButton = { x: STAGE_WIDTH / 2 - 150, y: 250, width: 300, height: 50 };
+    ctx.strokeStyle = 'white';
+    ctx.strokeRect(survivalButton.x, survivalButton.y, survivalButton.width, survivalButton.height);
+    ctx.fillText('서바이벌 모드 시작', STAGE_WIDTH / 2, 280);
+
+    // Button for Open Shop
+    const shopButton = { x: STAGE_WIDTH / 2 - 150, y: 320, width: 300, height: 50 };
+    ctx.strokeStyle = 'white';
+    ctx.strokeRect(shopButton.x, shopButton.y, shopButton.width, shopButton.height);
+    ctx.fillText('상점 열기', STAGE_WIDTH / 2, 350);
+
+    ctx.textAlign = 'left';
+}
+
+function updateSurvivalLogic() {
+    player.update();
+    checkStageCollisions();
+
+    let speedMultiplier = 1;
+    if (isUltimateActive && player.equippedUltimate === 'time_warp') {
+        speedMultiplier = 0.3;
+    }
+
+    for (let i = lasers.length - 1; i >= 0; i--) {
+        const l = lasers[i];
+        if (l.direction === 'right') {
+            l.x += LASER_SPEED;
+        } else if (l.direction === 'left') {
+            l.x -= LASER_SPEED;
+        } else if (l.direction === 'up') {
+            l.y -= LASER_SPEED;
+        }
+
+        if (l.x > STAGE_WIDTH || l.x < 0 || l.y < 0) {
+            lasers.splice(i, 1);
+        }
+    }
+
+    enemies.forEach(e => e.update(speedMultiplier));
+    for (let i = enemies.length - 1; i >= 0; i--) { if (enemies[i].x + enemies[i].width < 0) enemies.splice(i, 1); }
+
+    if (enemies.length === 0 && !isBossFight) {
+        nextSurvivalWave();
+    }
+
+    if (isUltimateActive) {
+        ultimateTimer -= 1 / 60;
+        if (player.equippedUltimate === 'damage') {
+             for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < 150) {
+                    enemies.splice(i, 1);
+                    survivalScore += 10;
+                }
+            }
+        }
+        if (ultimateTimer <= 0) { isUltimateActive = false; ultimateGauge = 0; }
+    }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.dx;
+        p.y += p.dy;
+        p.life--;
+        if (p.radius > 0.2) p.radius -= 0.1;
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function drawSurvival() {
+    drawStage1Background();
+    player.draw();
+    enemies.forEach(e => e.draw());
+    bossProjectiles.forEach(p => p.draw());
+    lightningZones.forEach(z => z.draw());
+    residualElectrics.forEach(r => r.draw());
+    fires.forEach(f => f.draw());
+    obstacles.forEach(o => o.draw());
+    bubbles.forEach(b => {
+        ctx.fillStyle = 'rgba(173, 216, 230, 0.7)';
+        ctx.beginPath();
+        ctx.arc(b.x + b.width / 2, b.y + b.height / 2, b.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.fillStyle = '#00ff00';
+    lasers.forEach(l => ctx.fillRect(l.x, l.y, l.width, l.height));
+
+    // Draw particles
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life / p.startLife;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    });
+
+    drawSurvivalUI();
+}
+
+function drawSurvivalUI() {
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText(`HP: ${player.hp}/${player.maxHp}`, 20, 30);
+    ctx.fillText(`코인: ${player.coins}`, 20, 60);
+    ctx.fillText(`Wave: ${survivalWave}`, 20, 90);
+    ctx.fillText(`Score: ${survivalScore}`, 20, 120);
+
+    // 필살기 게이지
+    ctx.fillStyle = 'gray'; ctx.fillRect(20, 140, 200, 20);
+    ctx.fillStyle = 'yellow'; ctx.fillRect(20, 140, ultimateGauge * 2, 20);
+    ctx.strokeStyle = 'white'; ctx.strokeRect(20, 140, 200, 20);
+    ctx.fillStyle = 'white'; ctx.font = '14px Arial';
+    ctx.fillText('필살기 (M)', 230, 155);
 }
 
 function drawQuestUI() {
@@ -2945,6 +3122,7 @@ function createStage11Boss() {
     };
 
     function gameOver() {
+        previousGameState = gameState;
         // 플레이어의 현재 위치 저장 (폭발 시작 지점)
         gameOverAnimationState.playerX = player.x + player.width / 2;
         gameOverAnimationState.playerY = player.y + player.height / 2;
@@ -3029,6 +3207,42 @@ function goToStage() {
     playBGM(stage);
 }
 
+function startSurvivalMode() {
+    gameState = 'survival';
+    // Reset player position for survival mode
+    player.x = STAGE_WIDTH / 2;
+    player.y = STAGE_HEIGHT - GROUND_HEIGHT - player.height;
+
+    // Clear existing enemies and projectiles
+    enemies.length = 0;
+    bossProjectiles.length = 0;
+    lightningZones.length = 0;
+    residualElectrics.length = 0;
+    fires.length = 0;
+    bubbles.length = 0;
+    obstacles.length = 0;
+
+    isBossFight = false; // No boss in survival mode initially
+    gameTimer = 0; // Start fresh timer for survival duration/waves
+    currentDialogue = ''; // Clear any active dialogue
+
+    // Survival mode specific setup (e.g., initial wave, score reset)
+    survivalWave = 0;
+    survivalScore = 0;
+    nextSurvivalWave();
+    // playBGM('survival'); // Assuming a survival BGM
+}
+
+function nextSurvivalWave() {
+    survivalWave++;
+    enemies.length = 0;
+    // Increase difficulty each wave
+    const enemiesToSpawn = 5 + survivalWave * 2;
+    for (let i = 0; i < enemiesToSpawn; i++) {
+        setTimeout(createEnemy, i * 500);
+    }
+}
+
 function isColliding(rect1, rect2) {
     return rect1.x < rect2.x + rect2.width &&
            rect1.x + rect1.width > rect2.x &&
@@ -3041,13 +3255,13 @@ function buyItem(item, id) {
         player.coins -= item.price;
         if (item.type === 'consumable') {
             if (item.id === 'potion') player.inventory.potions++;
-            alert(`${item.name}을(를) 구매했습니다.`);
+            // alert(`${item.name}을(를) 구매했습니다.`);
         } else if (item.type === 'ultimate') {
             ultimates[id].purchased = true;
-            alert(`${item.name}을(를) 구매했습니다.`);
+            // alert(`${item.name}을(를) 구매했습니다.`);
         }
     } else {
-        alert('코인이 부족합니다.');
+        // alert('코인이 부족합니다.');
     }
 }
 
