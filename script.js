@@ -311,6 +311,7 @@ const player = {
     dashSpeed: 18,
     isSlowed: false,
     slowTimer: 0,
+    pet: null,
 
     draw() {
         const bodyY = this.y + this.headRadius * 2;
@@ -1540,7 +1541,8 @@ function createDashParticle(x, y) {
 const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
     merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue', dialogue: "서바이벌 모드를 시작하시겠습니까? (E)" }, // Changed back to blue
-    radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' }
+    radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' },
+    petSeller: { x: 250, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'brown', dialogue: "펫을 구매하시겠습니까? (E)" }
 };
 
 // --- 입력 처리 ---
@@ -1721,6 +1723,16 @@ function handleMouseClick(e) {
             activeUI = 'shop'; // Open the shop UI
         }
     }
+ else if (activeUI === 'petShop') {
+        let itemY = 200;
+        Object.keys(petTypes).forEach(id => {
+            const petButton = { x: 250, y: itemY, width: 300, height: 50 };
+            if (isColliding(mousePos, petButton)) {
+                buyPet(id);
+            }
+            itemY += 60;
+        });
+    }
 }
 canvas.addEventListener('click', handleMouseClick);
 
@@ -1760,6 +1772,7 @@ function draw() {
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
     else if (activeUI === 'merchant_choice') drawMerchantChoiceUI(); // New condition for merchant choice
+    else if (activeUI === 'petShop') drawPetShopUI();
 }
 
 // --- 스토리 로직 ---
@@ -2110,6 +2123,10 @@ function updateStageLogic() {
             particles.splice(i, 1);
         }
     }
+
+    if (player.pet) {
+        player.pet.update();
+    }
 }
 
 function checkStageCollisions() {
@@ -2190,6 +2207,22 @@ function checkStageCollisions() {
     }
     for (const fire of fires) { if(isColliding(player, fire)) player.takeDamage(); }
     for (const obstacle of obstacles) { if (isColliding(player, obstacle)) player.takeDamage(); }
+
+    for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+        const p = bossProjectiles[i];
+        if (p.type === 'pet_projectile') {
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                if (isColliding(p, enemies[j])) {
+                    enemies[j].hp--;
+                    if (enemies[j].hp <= 0) {
+                        enemies.splice(j, 1);
+                    }
+                    bossProjectiles.splice(i, 1);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 function drawStage() {
@@ -2222,6 +2255,10 @@ function drawStage() {
         ctx.fill();
         ctx.globalAlpha = 1.0;
     });
+
+    if (player.pet) {
+        player.pet.draw();
+    }
 
     drawStageUI();
 }
@@ -2495,6 +2532,9 @@ function updateVillageLogic() {
         else if (isColliding(player, npcs.merchant)) {
             activeUI = 'merchant_choice'; // Set new UI state for merchant choice
         }
+        else if (isColliding(player, npcs.petSeller)) {
+            activeUI = 'petShop';
+        }
         else if (isColliding(player, npcs.radio)) {
             if (!isFightingHiddenBoss) {
                 const answer = prompt("비밀 코드를 입력하십시오.");
@@ -2707,6 +2747,10 @@ function updateSurvivalLogic() {
             particles.splice(i, 1);
         }
     }
+
+    if (player.pet) {
+        player.pet.update();
+    }
 }
 
 function drawSurvival() {
@@ -2736,6 +2780,10 @@ function drawSurvival() {
         ctx.fill();
         ctx.globalAlpha = 1.0;
     });
+
+    if (player.pet) {
+        player.pet.draw();
+    }
 
     drawSurvivalUI();
 }
@@ -2778,6 +2826,34 @@ function drawQuestUI() {
     } else { // isComplete
         ctx.fillText('완료!', STAGE_WIDTH / 2, 300);
     }
+    ctx.textAlign = 'center';
+}
+
+function drawPetShopUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('펫 상점', STAGE_WIDTH / 2, 80);
+    ctx.font = '16px Arial';
+    ctx.fillText('펫을 클릭하여 구매하세요. (E를 눌러 닫기)', STAGE_WIDTH / 2, 120);
+    ctx.fillText(`내 코인: ${player.coins}`, STAGE_WIDTH / 2, 150);
+
+    ctx.textAlign = 'left';
+    let itemY = 200;
+
+    Object.keys(petTypes).forEach(id => {
+        const pet = petTypes[id];
+        ctx.strokeRect(250, itemY, 300, 50);
+        ctx.font = '16px Arial';
+        const text = player.pet && player.pet.type === id ? `${pet.name} (보유중)` : `${pet.name} - ${pet.price} 코인`;
+        ctx.fillText(text, 260, itemY + 20);
+        ctx.font = '12px Arial';
+        ctx.fillText(pet.description, 260, itemY + 40);
+        itemY += 60;
+    });
+
     ctx.textAlign = 'center';
 }
 
@@ -3339,6 +3415,123 @@ function buyItem(item, id) {
         }
     } else {
         // alert('코인이 부족합니다.');
+    }
+}
+
+const petTypes = {
+    'pet1': {
+        name: '레이저 펫 1',
+        price: 100,
+        description: '20초마다 레이저를 1번 발사합니다.',
+        attackCooldown: 20 * 60, // 20 seconds
+        lasers: 1,
+        draw: function() {
+            ctx.fillStyle = 'gold';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    },
+    'pet2': {
+        name: '레이저 펫 2',
+        price: 200,
+        description: '15초마다 레이저를 2번 발사합니다.',
+        attackCooldown: 15 * 60, // 15 seconds
+        lasers: 2,
+        draw: function() {
+            ctx.fillStyle = 'silver';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    },
+    'pet3': {
+        name: '레이저 펫 3',
+        price: 300,
+        description: '10초마다 레이저를 3번 발사합니다.',
+        attackCooldown: 10 * 60, // 10 seconds
+        lasers: 3,
+        draw: function() {
+            ctx.fillStyle = '#b9f2ff'; // diamond color
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+};
+
+function createPet(id) {
+    const petType = petTypes[id];
+    return {
+        type: id,
+        x: player.x - 50,
+        y: player.y,
+        width: 30,
+        height: 30,
+        speed: 4,
+        attackCooldown: 0,
+        attackRange: 300,
+        draw: petType.draw,
+        update() {
+            // Follow player
+            const dx = (player.x - 50) - this.x;
+            const dy = player.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > 1) {
+                this.x += (dx / distance) * this.speed;
+                this.y += (dy / distance) * this.speed;
+            }
+
+            // Attack enemies
+            if (this.attackCooldown > 0) {
+                this.attackCooldown--;
+            } else {
+                const closestEnemy = enemies.sort((a, b) => {
+                    const distA = Math.sqrt(Math.pow(this.x - a.x, 2) + Math.pow(this.y - a.y, 2));
+                    const distB = Math.sqrt(Math.pow(this.x - b.x, 2) + Math.pow(this.y - b.y, 2));
+                    return distA - distB;
+                })[0];
+
+                if (closestEnemy) {
+                    const distanceToEnemy = Math.sqrt(Math.pow(this.x - closestEnemy.x, 2) + Math.pow(this.y - closestEnemy.y, 2));
+                    if (distanceToEnemy < this.attackRange) {
+                        this.attack(closestEnemy);
+                        this.attackCooldown = petType.attackCooldown;
+                    }
+                }
+            }
+        },
+        attack(enemy) {
+            for (let i = 0; i < petType.lasers; i++) {
+                setTimeout(() => {
+                    const angleToEnemy = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+                    bossProjectiles.push({
+                        x: this.x, y: this.y, width: 10, height: 10, speed: 8, angle: angleToEnemy, type: 'pet_projectile',
+                        draw() { ctx.fillStyle = 'lightblue'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+                        update() {
+                            this.x += Math.cos(this.angle) * this.speed;
+                            this.y += Math.sin(this.angle) * this.speed;
+                        }
+                    });
+                }, i * 200); // 0.2초 간격으로 발사
+            }
+        }
+    };
+}
+
+function buyPet(id) {
+    const petType = petTypes[id];
+    if (player.coins >= petType.price) {
+        if (player.pet && player.pet.type === id) {
+            alert('이미 해당 펫을 보유하고 있습니다.');
+            return;
+        }
+        player.coins -= petType.price;
+        player.pet = createPet(id);
+        alert(`${petType.name}을(를) 구매했습니다.`);
+    } else {
+        alert('코인이 부족합니다.');
     }
 }
 
