@@ -89,7 +89,7 @@ let currentDialogue = '';
 let dialogueTimer = null;
 
 // --- 게임 상태 관리 ---
-let gameState = 'story'; // tutorial, menu, stage, village, ending, reviving
+let gameState = 'story'; // tutorial, menu, stage, village, ending, reviving, minigame_card, minigame_rhythm, minigame_shooting
 let previousGameState = '';
 let activeUI = null; // null, 'quest', 'shop'
 let storyPage = 0;
@@ -123,6 +123,7 @@ let isPoweredUp = false;
 let powerUpTimer = 0;
 let numberInputSequence = ''; // '1010' 입력을 위한 변수
 let showNumberInput = false; // 입력된 숫자를 화면에 표시할지 여부
+let minigameState = {};
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -1542,13 +1543,39 @@ const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
     merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue', dialogue: "서바이벌 모드를 시작하시겠습니까? (E)" }, // Changed back to blue
     radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' },
-    petSeller: { x: 250, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'brown', dialogue: "펫을 구매하시겠습니까? (E)" }
+    petSeller: { x: 250, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'brown', dialogue: "펫을 구매하시겠습니까? (E)" },
+    minigameHost: { x: 500, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'cyan', dialogue: "미니게임을 플레이하시겠습니까? (E)" }
 };
 
 // --- 입력 처리 ---
 const keys = { left: false, right: false, down: false, e: false, p: false, m: false, b: false };
 function handleKeyDown(e) {
     const key = e.key.toLowerCase();
+
+    if (gameState === 'minigame_rhythm') {
+        const column = minigameState.columns.indexOf(key);
+        if (column !== -1) {
+            const targetY = STAGE_HEIGHT - 100;
+            let hit = false;
+            for (let i = minigameState.notes.length - 1; i >= 0; i--) {
+                const note = minigameState.notes[i];
+                if (note.column === column) {
+                    const distance = Math.abs(note.y - targetY);
+                    if (distance < 30) {
+                        minigameState.score += 10;
+                        minigameState.combo++;
+                        minigameState.notes.splice(i, 1);
+                        hit = true;
+                        break;
+                    }
+                }
+            }
+            if (!hit) {
+                minigameState.combo = 0;
+            }
+        }
+        return;
+    }
 
     // --- 치트키 ---
     if (key === 'h') {
@@ -1722,8 +1749,7 @@ function handleMouseClick(e) {
         } else if (isColliding(mousePos, shopButton)) {
             activeUI = 'shop'; // Open the shop UI
         }
-    }
- else if (activeUI === 'petShop') {
+    } else if (activeUI === 'petShop') {
         let itemY = 200;
         Object.keys(petTypes).forEach(id => {
             const petButton = { x: 250, y: itemY, width: 300, height: 50 };
@@ -1732,6 +1758,54 @@ function handleMouseClick(e) {
             }
             itemY += 60;
         });
+    } else if (activeUI === 'minigameSelection') {
+        // Card-Flipping Game Button
+        if (isColliding(mousePos, { x: 250, y: 200, width: 300, height: 50 })) {
+            startCardMinigame();
+        }
+        // Rhythm Game Button
+        if (isColliding(mousePos, { x: 250, y: 270, width: 300, height: 50 })) {
+            startRhythmMinigame();
+        }
+        // Shooting Gallery Button
+        if (isColliding(mousePos, { x: 250, y: 340, width: 300, height: 50 })) {
+            startShootingMinigame();
+        }
+    } else if (gameState === 'minigame_card') {
+        if (minigameState.flippedCards.length < 2) {
+            minigameState.cards.forEach(card => {
+                if (!card.isFlipped && isColliding(mousePos, card)) {
+                    card.isFlipped = true;
+                    minigameState.flippedCards.push(card);
+
+                    if (minigameState.flippedCards.length === 2) {
+                        // Check for match
+                        if (minigameState.flippedCards[0].type === minigameState.flippedCards[1].type) {
+                            minigameState.flippedCards[0].isMatched = true;
+                            minigameState.flippedCards[1].isMatched = true;
+                            minigameState.matches++;
+                            minigameState.flippedCards = [];
+                        } else {
+                            // No match, flip back after a delay
+                            setTimeout(() => {
+                                minigameState.flippedCards[0].isFlipped = false;
+                                minigameState.flippedCards[1].isFlipped = false;
+                                minigameState.flippedCards = [];
+                            }, 1000);
+                        }
+                    }
+                }
+            });
+        }
+    } else if (gameState === 'minigame_shooting') {
+        for (let i = minigameState.targets.length - 1; i >= 0; i--) {
+            const target = minigameState.targets[i];
+            if (isColliding(mousePos, target)) {
+                minigameState.score++;
+                minigameState.targets.splice(i, 1);
+                break;
+            }
+        }
     }
 }
 canvas.addEventListener('click', handleMouseClick);
@@ -1755,6 +1829,9 @@ function updateLogic() {
     else if (gameState === 'reviving') { /* Do nothing */ }
     else if (gameState === 'ending') { /* Do nothing */ }
     else if (gameState === 'gameOverAnimation') updateGameOverAnimation(); // 게임 오버 애니메이션 업데이트
+    else if (gameState === 'minigame_card') updateCardMinigame();
+    else if (gameState === 'minigame_shooting') updateShootingMinigame();
+    else if (gameState === 'minigame_rhythm') updateRhythmMinigame();
 }
 
 function draw() {
@@ -1768,11 +1845,15 @@ function draw() {
     else if (gameState === 'reviving') drawRevivalScreen();
     else if (gameState === 'ending') drawEndingScreen();
     else if (gameState === 'gameOverAnimation') drawGameOverAnimation(); // 게임 오버 애니메이션 그리기
+    else if (gameState === 'minigame_card') drawCardMinigame();
+    else if (gameState === 'minigame_shooting') drawShootingMinigame();
+    else if (gameState === 'minigame_rhythm') drawRhythmMinigame();
 
     if (activeUI === 'quest') drawQuestUI();
     else if (activeUI === 'shop') drawShopUI();
     else if (activeUI === 'merchant_choice') drawMerchantChoiceUI(); // New condition for merchant choice
     else if (activeUI === 'petShop') drawPetShopUI();
+    else if (activeUI === 'minigameSelection') drawMinigameSelectionUI();
 }
 
 // --- 스토리 로직 ---
@@ -2535,6 +2616,9 @@ function updateVillageLogic() {
         else if (isColliding(player, npcs.petSeller)) {
             activeUI = 'petShop';
         }
+        else if (isColliding(player, npcs.minigameHost)) {
+            activeUI = 'minigameSelection';
+        }
         else if (isColliding(player, npcs.radio)) {
             if (!isFightingHiddenBoss) {
                 const answer = prompt("비밀 코드를 입력하십시오.");
@@ -2855,6 +2939,244 @@ function drawPetShopUI() {
     });
 
     ctx.textAlign = 'center';
+}
+
+function drawMinigameSelectionUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('미니게임 선택', STAGE_WIDTH / 2, 80);
+    ctx.font = '16px Arial';
+    ctx.fillText('플레이할 미니게임을 선택하세요. (E를 눌러 닫기)', STAGE_WIDTH / 2, 120);
+
+    // Card-Flipping Game Button
+    ctx.strokeRect(250, 200, 300, 50);
+    ctx.font = '20px Arial';
+    ctx.fillText('카드 뒤집기', STAGE_WIDTH / 2, 230);
+
+    // Rhythm Game Button
+    ctx.strokeRect(250, 270, 300, 50);
+    ctx.fillText('리듬 게임', STAGE_WIDTH / 2, 300);
+
+    // Shooting Gallery Button
+    ctx.strokeRect(250, 340, 300, 50);
+    ctx.fillText('사격 갤러리', STAGE_WIDTH / 2, 370);
+}
+
+function startCardMinigame() {
+    gameState = 'minigame_card';
+    activeUI = null;
+    const cardTypes = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    let cards = [...cardTypes, ...cardTypes];
+    // Shuffle cards
+    for (let i = cards.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+
+    minigameState = {
+        cards: cards.map((type, index) => ({
+            type: type,
+            x: 150 + (index % 4) * 120,
+            y: 150 + Math.floor(index / 4) * 120,
+            width: 100,
+            height: 100,
+            isFlipped: false,
+            isMatched: false
+        })),
+        flippedCards: [],
+        matches: 0,
+        timer: 60 * 60 // 60 seconds
+    };
+}
+
+function updateCardMinigame() {
+    minigameState.timer--;
+    if (minigameState.timer <= 0 || minigameState.matches === 8) {
+        const score = minigameState.matches * 10;
+        alert(`게임 종료! 점수: ${score}`);
+        player.coins += score;
+        goToVillage();
+    }
+}
+
+function drawCardMinigame() {
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('카드 뒤집기', STAGE_WIDTH / 2, 50);
+    ctx.font = '20px Arial';
+    ctx.fillText(`남은 시간: ${(minigameState.timer / 60).toFixed(1)}`, STAGE_WIDTH / 2, 100);
+
+    minigameState.cards.forEach(card => {
+        if (!card.isMatched) {
+            ctx.fillStyle = card.isFlipped ? 'white' : 'gray';
+            ctx.fillRect(card.x, card.y, card.width, card.height);
+            if (card.isFlipped) {
+                ctx.fillStyle = 'black';
+                ctx.font = '50px Arial';
+                ctx.fillText(card.type, card.x + 50, card.y + 65);
+            }
+        }
+    });
+}
+
+function startShootingMinigame() {
+    gameState = 'minigame_shooting';
+    activeUI = null;
+    minigameState = {
+        targets: [],
+        score: 0,
+        timer: 30 * 60 // 30 seconds
+    };
+}
+
+function updateShootingMinigame() {
+    minigameState.timer--;
+    if (minigameState.timer <= 0) {
+        const score = minigameState.score;
+        alert(`게임 종료! 점수: ${score}`);
+        player.coins += score;
+        goToVillage();
+    }
+
+    // Spawn targets
+    if (Math.random() < 0.05) {
+        minigameState.targets.push({
+            x: 0,
+            y: Math.random() * (STAGE_HEIGHT - 100) + 50,
+            width: 50,
+            height: 50,
+            speed: Math.random() * 3 + 1
+        });
+    }
+
+    // Update targets
+    for (let i = minigameState.targets.length - 1; i >= 0; i--) {
+        const target = minigameState.targets[i];
+        target.x += target.speed;
+        if (target.x > STAGE_WIDTH) {
+            minigameState.targets.splice(i, 1);
+        }
+    }
+}
+
+function drawShootingMinigame() {
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    // Draw targets
+    minigameState.targets.forEach(target => {
+        ctx.fillStyle = 'red';
+        ctx.fillRect(target.x, target.y, target.width, target.height);
+    });
+
+    // Draw UI
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('사격 갤러리', STAGE_WIDTH / 2, 50);
+    ctx.font = '20px Arial';
+    ctx.fillText(`점수: ${minigameState.score}`, STAGE_WIDTH / 2, 100);
+    ctx.fillText(`남은 시간: ${(minigameState.timer / 60).toFixed(1)}`, STAGE_WIDTH / 2, 130);
+}
+
+const beatmap = {
+    song: 'level.wav',
+    notes: [
+        { time: 1, column: 0 },
+        { time: 2, column: 1 },
+        { time: 3, column: 2 },
+        { time: 4, column: 3 },
+        { time: 5, column: 0 },
+        { time: 5.5, column: 1 },
+        { time: 6, column: 2 },
+        { time: 6.5, column: 3 },
+        { time: 7, column: 0 },
+        { time: 7.25, column: 1 },
+        { time: 7.5, column: 2 },
+        { time: 7.75, column: 3 },
+        { time: 8, column: 0 },
+        { time: 8.5, column: 1 },
+        { time: 9, column: 2 },
+        { time: 9.5, column: 3 },
+        { time: 10, column: 0 },
+    ]
+};
+
+function startRhythmMinigame() {
+    gameState = 'minigame_rhythm';
+    activeUI = null;
+    minigameState = {
+        notes: JSON.parse(JSON.stringify(beatmap.notes)),
+        score: 0,
+        combo: 0,
+        song: new Audio(beatmap.song),
+        startTime: Date.now(),
+        noteSpeed: 5,
+        columns: ['d', 'f', 'j', 'k']
+    };
+    minigameState.song.play();
+}
+
+function updateRhythmMinigame() {
+    const currentTime = (Date.now() - minigameState.startTime) / 1000;
+
+    // Update note positions
+    minigameState.notes.forEach(note => {
+        const travelTime = 2; // seconds
+        const startY = 0;
+        const endY = STAGE_HEIGHT - 100;
+        const startTime = note.time - travelTime;
+        
+        if (currentTime >= startTime) {
+            note.y = startY + ((currentTime - startTime) / travelTime) * endY;
+        } else {
+            note.y = -100;
+        }
+    });
+
+    if (currentTime > beatmap.notes[beatmap.notes.length - 1].time + 2) {
+        alert(`게임 종료! 점수: ${minigameState.score}`);
+        minigameState.song.pause();
+        player.coins += minigameState.score;
+        goToVillage();
+    }
+}
+
+function drawRhythmMinigame() {
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    // Draw columns and target line
+    for (let i = 0; i < 4; i++) {
+        ctx.strokeStyle = 'white';
+        ctx.strokeRect(250 + i * 70, 0, 70, STAGE_HEIGHT);
+    }
+    ctx.fillStyle = 'yellow';
+    ctx.fillRect(250, STAGE_HEIGHT - 100, 280, 10);
+
+    // Draw notes
+    minigameState.notes.forEach(note => {
+        if (note.y > 0 && note.y < STAGE_HEIGHT) {
+            ctx.fillStyle = 'cyan';
+            ctx.fillRect(250 + note.column * 70 + 10, note.y - 20, 50, 20);
+        }
+    });
+
+    // Draw UI
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('리듬 게임', STAGE_WIDTH / 2, 50);
+    ctx.font = '20px Arial';
+    ctx.fillText(`점수: ${minigameState.score}`, STAGE_WIDTH / 2, 100);
+    ctx.fillText(`콤보: ${minigameState.combo}`, STAGE_WIDTH / 2, 130);
 }
 
 // --- 부활 / 엔딩 화면 ---
