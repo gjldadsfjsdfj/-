@@ -589,35 +589,109 @@ const quest = {
 };
 
 // --- 적/보스/NPC/발사체 생성 함수 ---
-function createEnemy() {
-    const size = 40;
-    const fromLeft = Math.random() < 0.2; // 20% chance to spawn from the left
-    const newEnemy = {
-        x: fromLeft ? 0 : STAGE_WIDTH, y: STAGE_HEIGHT - GROUND_HEIGHT - size, width: size, height: size,
-        speed: (Math.random() * 2 + 1) * (1 + (stage - 1) * 0.1) * (fromLeft ? -1 : 1),
-        laserCooldown: (stage === 8) ? 300 : 0, // 5초 쿨다운 (60fps * 5)
-        draw() { ctx.fillStyle = 'purple'; ctx.fillRect(this.x, this.y, this.width, this.height); },
-        update(speedMultiplier = 1) { 
-            this.x -= this.speed * speedMultiplier; 
-            if (this.laserCooldown > 0) {
-                this.laserCooldown--;
-                if (this.laserCooldown === 0) {
-                    this.shootLaser();
-                    this.laserCooldown = 300;
-                }
-            }
+function drawRobot(x, y, width, height, headColor, bodyColor, eyeColor) {
+    const headSize = width * 0.8;
+    const bodyWidth = width;
+    const bodyHeight = height - headSize;
+    const bodyX = x;
+    const bodyY = y + headSize;
+
+    // Body
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(bodyX, bodyY, bodyWidth, bodyHeight);
+
+    // Head
+    ctx.fillStyle = headColor;
+    ctx.fillRect(x + (width - headSize) / 2, y, headSize, headSize);
+
+    // Eye
+    ctx.fillStyle = eyeColor;
+    ctx.fillRect(x + (width - headSize / 2) / 2, y + headSize / 4, headSize / 2, headSize / 4);
+}
+
+const enemyTypes = {
+    'basic': {
+        size: 40,
+        speed: (Math.random() * 2 + 1),
+        hp: 1,
+        color: 'purple',
+        draw: function() {
+            drawRobot(this.x, this.y, this.width, this.height, 'gray', this.color, 'red');
+        }
+    },
+    'ranged': {
+        size: 40,
+        speed: (Math.random() * 1 + 1),
+        hp: 1,
+        color: 'orange',
+        shootCooldown: 120,
+        draw: function() {
+            drawRobot(this.x, this.y, this.width, this.height, 'gray', this.color, 'aqua');
         },
-        shootLaser() {
+        shoot: function() {
             const angleToPlayer = Math.atan2((player.y + player.height / 2) - (this.y + this.height / 2), (player.x + player.width / 2) - (this.x + this.width / 2));
             bossProjectiles.push({
                 x: this.x, y: this.y + this.height / 2, width: 15, height: 5, speed: 5, angle: angleToPlayer, type: 'laser',
-                draw() { ctx.fillStyle = 'orange'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+                draw() { ctx.fillStyle = 'red'; ctx.fillRect(this.x, this.y, this.width, this.height); },
                 update(speedMultiplier = 1) { this.x += Math.cos(this.angle) * this.speed * speedMultiplier; this.y += Math.sin(this.angle) * this.speed * speedMultiplier; }
             });
         }
+    },
+    'tank': {
+        size: 60,
+        speed: (Math.random() * 0.5 + 0.5),
+        hp: 3,
+        color: 'darkred',
+        draw: function() {
+            drawRobot(this.x, this.y, this.width, this.height, 'darkgray', this.color, 'yellow');
+        }
+    },
+    'fast': {
+        size: 20,
+        speed: (Math.random() * 3 + 2),
+        hp: 1,
+        color: 'yellow',
+        draw: function() {
+            drawRobot(this.x, this.y, this.width, this.height, 'lightgray', this.color, 'black');
+        }
+    }
+};
+function createEnemy() {
+    const enemyTypeKeys = Object.keys(enemyTypes);
+    const randomTypeKey = enemyTypeKeys[Math.floor(Math.random() * enemyTypeKeys.length)];
+    const enemyType = enemyTypes[randomTypeKey];
+
+    const fromLeft = Math.random() < 0.2; // 20% chance to spawn from the left
+    const newEnemy = {
+        type: randomTypeKey,
+        x: fromLeft ? 0 : STAGE_WIDTH,
+        y: STAGE_HEIGHT - GROUND_HEIGHT - enemyType.size,
+        width: enemyType.size,
+        height: enemyType.size,
+        speed: enemyType.speed * (1 + (stage - 1) * 0.1) * (fromLeft ? -1 : 1),
+        hp: enemyType.hp,
+        draw: enemyType.draw,
+        update(speedMultiplier = 1) {
+            this.x -= this.speed * speedMultiplier;
+            if (this.type === 'ranged') {
+                if (!this.shootCooldown) {
+                    this.shootCooldown = enemyType.shootCooldown;
+                }
+                this.shootCooldown--;
+                if (this.shootCooldown <= 0) {
+                    enemyType.shoot.call(this);
+                    this.shootCooldown = enemyType.shootCooldown;
+                }
+            }
+        }
     };
+
+    if (enemyType.shoot) {
+        newEnemy.shoot = enemyType.shoot;
+    }
+
     enemies.push(newEnemy);
-    return newEnemy; // 반환하여 속성 수정 가능하게
+    return newEnemy;
 }
 
 function createBoss() {
@@ -2043,25 +2117,28 @@ function checkStageCollisions() {
         const laser = lasers[i];
         for (let j = enemies.length - 1; j >= 0; j--) {
             if (isColliding(laser, enemies[j])) {
-                if (isUltimateActive && player.equippedUltimate === 'vampiric_aura') {
-                    player.hp = Math.min(player.maxHp, player.hp + 1);
-                }
-                createSparkEffect(laser.x, laser.y); // 스파크 효과
-                createEnemyDeathEffect(enemies[j].x + enemies[j].width / 2, enemies[j].y + enemies[j].height / 2); // 적 사망 효과
-                enemies.splice(j, 1);
-                lasers.splice(i, 1);
-                ultimateGauge = Math.min(100, ultimateGauge + 10);
-                player.coins += 10;
-                if (gameState === 'survival') {
-                    survivalScore += 10;
-                }
-                playSound('coin');
-                player.enemyKillCount++;
+                enemies[j].hp--;
+                if (enemies[j].hp <= 0) {
+                    if (isUltimateActive && player.equippedUltimate === 'vampiric_aura') {
+                        player.hp = Math.min(player.maxHp, player.hp + 1);
+                    }
+                    createSparkEffect(laser.x, laser.y); // 스파크 효과
+                    createEnemyDeathEffect(enemies[j].x + enemies[j].width / 2, enemies[j].y + enemies[j].height / 2); // 적 사망 효과
+                    enemies.splice(j, 1);
+                    ultimateGauge = Math.min(100, ultimateGauge + 10);
+                    player.coins += 10;
+                    if (gameState === 'survival') {
+                        survivalScore += 10;
+                    }
+                    playSound('coin');
+                    player.enemyKillCount++;
 
-                const currentStageData = stages[stage - 1];
-                if (currentStageData.type === 'kill' && player.enemyKillCount >= currentStageData.killGoal) {
-                    nextStage();
+                    const currentStageData = stages[stage - 1];
+                    if (currentStageData.type === 'kill' && player.enemyKillCount >= currentStageData.killGoal) {
+                        nextStage();
+                    }
                 }
+                lasers.splice(i, 1);
                 break;
             }
         }
