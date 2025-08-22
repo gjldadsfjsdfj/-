@@ -1636,6 +1636,15 @@ function handleKeyDown(e) {
         playSound('gemini');
         isGeminiModeUsed = true;
     }
+    if (key === 'u') { // 'u' key handler for hidden stage
+        if (!isFightingHiddenBoss) {
+            alert("히든 스테이지가 개방됩니다.");
+            stage = 12; // Set to a new hidden stage number
+            goToStage(); // Go to the new hidden stage
+            // createHiddenBoss will be called by goToStage for stage 12
+        }
+        return; // Consume the key press
+    }
     // ---
 
     if (activeUI) {
@@ -2670,18 +2679,7 @@ function updateVillageLogic() {
         else if (isColliding(player, npcs.minigameHost)) {
             activeUI = 'minigameSelection';
         }
-        else if (isColliding(player, npcs.radio)) {
-            if (!isFightingHiddenBoss) {
-                const answer = prompt("비밀 코드를 입력하십시오.");
-                if (answer === "seungjae") {
-                    alert("히든 스테이지가 개방됩니다.");
-                    goToStage();
-                    setTimeout(createHiddenBoss, 1000);
-                } else {
-                    alert("코드가 틀렸습니다.");
-                }
-            }
-        }
+        
         keys.e = false;
     }
 }
