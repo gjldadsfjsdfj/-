@@ -142,6 +142,7 @@ let showNumberInput = false; // 입력된 숫자를 화면에 표시할지 여�
 let minigameState = {};
 let gameOverAnimationState = {};
 let isGeminiModeUsed = false;
+let isGeminiModeActive = false; // Added this line
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -1477,7 +1478,30 @@ function updateGameOverAnimation() {
             if (previousGameState === 'survival') {
                 goToVillage();
             } else {
-                document.location.reload(); // 게임 재시작
+                // Instead of reloading, go back to the login/start screen
+                loginContainer.style.display = 'block';
+                gameContainer.style.display = 'none';
+                sessionStorage.removeItem('loggedInUser'); // Clear login state
+                // Optionally, reset player stats here if not done by showGame/login
+                player.hp = player.maxHp;
+                player.coins = 0;
+                stage = 1;
+                ultimateGauge = 0;
+                isBossFight = false;
+                gameTimer = 0;
+                enemies.length = 0;
+                bossProjectiles.length = 0;
+                lightningZones.length = 0;
+                residualElectrics.length = 0;
+                fires.length = 0;
+                bubbles.length = 0;
+                obstacles.length = 0;
+                boss = null;
+                isGroundSlippery = false;
+                isFightingHiddenBoss = false;
+                isSpawningNextBoss = false;
+                gameState = 'story'; // Reset to story or initial state
+                storyPage = 0; // Reset story page
             }
         }
     }
@@ -1841,6 +1865,7 @@ canvas.addEventListener('click', handleMouseClick);
 // ====================================================================
 
 function updateLogic() {
+    console.log('updateLogic running.'); // Added log
     if (activeUI) {
         if (keys.e) { activeUI = null; keys.e = false; }
         return;
@@ -1860,6 +1885,7 @@ function updateLogic() {
 }
 
 function draw() {
+    console.log('draw running.'); // Added log
     ctx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
     if (gameState === 'story') drawStory();
     else if (gameState === 'tutorial') drawTutorial();
@@ -3883,6 +3909,7 @@ function acceptQuest() {
 //                         게임 루프
 // ====================================================================
 function gameLoop() {
+    console.log('gameLoop running. Current gameState:', gameState); // Added log
     updateLogic();
     draw();
     frameCount++;
