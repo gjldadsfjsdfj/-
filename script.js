@@ -1,10 +1,16 @@
 // --- LOGIN/REGISTRATION LOGIC ---
 const loginContainer = document.getElementById('login-container');
+console.log('loginContainer:', loginContainer);
 const gameContainer = document.getElementById('game-container');
+console.log('gameContainer:', gameContainer);
 const usernameInput = document.getElementById('username');
+console.log('usernameInput:', usernameInput);
 const passwordInput = document.getElementById('password');
+console.log('passwordInput:', passwordInput);
 const loginBtn = document.getElementById('login-btn');
+console.log('loginBtn:', loginBtn);
 const registerBtn = document.getElementById('register-btn');
+console.log('registerBtn:', registerBtn);
 
 // Function to show the game and hide the login screen
 function showGame() {
@@ -17,20 +23,25 @@ function showGame() {
 registerBtn.addEventListener('click', () => {
     const username = usernameInput.value.trim();
     const password = passwordInput.value.trim();
+    console.log('Register attempt - Username:', username, 'Password:', password);
 
     if (!username || !password) {
         alert('아이디와 비밀번호를 모두 입력해주세요.');
+        console.log('Registration failed: Missing username or password.');
         return;
     }
 
     // Get existing users from localStorage, or create a new object
     const users = JSON.parse(localStorage.getItem('game_users')) || {};
+    console.log('Current users before registration:', users);
 
     if (users[username]) {
         alert('이미 존재하는 아이디입니다.');
+        console.log('Registration failed: Username already exists.');
     } else {
         users[username] = password;
         localStorage.setItem('game_users', JSON.stringify(users));
+        console.log('User registered:', username, 'Stored users:', JSON.parse(localStorage.getItem('game_users')));
         alert('회원가입이 완료되었습니다. 이제 로그인해주세요.');
     }
 });
@@ -39,21 +50,26 @@ registerBtn.addEventListener('click', () => {
 loginBtn.addEventListener('click', () => {
     const username = usernameInput.value.trim();
     const password = passwordInput.value.trim();
+    console.log('Login attempt - Username:', username, 'Password:', password);
 
     if (!username || !password) {
         alert('아이디와 비밀번호를 모두 입력해주세요.');
+        console.log('Login failed: Missing username or password.');
         return;
     }
 
     const users = JSON.parse(localStorage.getItem('game_users')) || {};
+    console.log('Current users for login check:', users);
 
     if (users[username] && users[username] === password) {
         // Save login state for the session
         sessionStorage.setItem('loggedInUser', username);
+        console.log('Login successful for user:', username);
         alert('로그인 성공!');
         showGame();
     } else {
         alert('아이디 또는 비밀번호가 일치하지 않습니다.');
+        console.log('Login failed: Invalid username or password. Expected password:', users[username], 'Provided password:', password);
     }
 });
 
@@ -124,6 +140,8 @@ let powerUpTimer = 0;
 let numberInputSequence = ''; // '1010' 입력을 위한 변수
 let showNumberInput = false; // 입력된 숫자를 화면에 표시할지 여부
 let minigameState = {};
+let gameOverAnimationState = {};
+let isGeminiModeUsed = false;
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -144,6 +162,7 @@ let currentBossIndex = 0;
 // --- 오디오 관리 ---
 // (오디오 파일은 게임 폴더에 있어야 합니다)
 const sounds = {
+    gemini: new Audio('game-teleport-90735.mp3'),
     // jump: new Audio('jump.wav'),
     // coin: new Audio('coin.wav'),
     // walk: new Audio('walk.wav'),
@@ -552,7 +571,7 @@ const player = {
         });
     },
     takeDamage() {
-        if (!this.isInvincible && !(isUltimateActive && this.equippedUltimate === 'defense')) {
+        if (!this.isInvincible && !(isUltimateActive && this.equippedUltimate === 'defense') && !isGeminiModeActive) {
             this.hp--;
             this.isInvincible = true;
             this.invincibleTimer = 120;
@@ -1586,6 +1605,12 @@ function handleKeyDown(e) {
     if (key === '0') {
         nextStage();
         return;
+    }
+    if (key === 'q' && !isGeminiModeUsed) {
+        isGeminiModeActive = true;
+        geminiModeTimer = 600; // 10 seconds
+        playSound('gemini');
+        isGeminiModeUsed = true;
     }
     // ---
 
@@ -3583,18 +3608,7 @@ function createStage11Boss() {
     };
 }
 
-// ====================================================================
-//                         게임 오버 및 다음 스테이지
-// ====================================================================
-    // 게임 오버 애니메이션 상태 변수
-    let gameOverAnimationState = {
-        phase: 'explosion', // 'explosion', 'ascension'
-        timer: 120, // 폭발 애니메이션 지속 시간 (프레임)
-        playerX: 0,
-        playerY: 0,
-        angelY: 0, // 천사 이미지의 Y 위치
-        angelAlpha: 0 // 천사 이미지의 투명도
-    };
+
 
     function gameOver() {
         previousGameState = gameState;
@@ -3877,3 +3891,16 @@ function gameLoop() {
 
 // 게임 시작
 checkLoginStatus();
+
+// Debugging: Log current users in localStorage on page load
+console.log('Current users in localStorage:', JSON.parse(localStorage.getItem('game_users')) || {});
+
+// Function to clear all local storage data
+function clearAllData() {
+    if (confirm('모든 사용자 데이터(로그인 정보 포함)를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+        localStorage.removeItem('game_users');
+        sessionStorage.removeItem('loggedInUser');
+        alert('모든 사용자 데이터가 삭제되었습니다. 페이지를 새로고침합니다.');
+        document.location.reload();
+    }
+}
