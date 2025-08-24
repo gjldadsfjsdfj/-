@@ -143,6 +143,7 @@ let minigameState = {};
 let gameOverAnimationState = {};
 let isGeminiModeUsed = false;
 let isGeminiModeActive = false; // Added this line
+let gachaResult = ''; // Global variable for gacha result
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -289,6 +290,7 @@ const ultimates = {
     time_warp: { name: '시간 왜곡장', description: '10초간 주변의 적과 투사체를 느리게 만듭니다.', price: 700, purchased: false, type: 'ultimate' },
     vampiric_aura: { name: '흡혈 오라', description: '10초간 적을 공격 시 체력을 회복합니다.', price: 800, purchased: false, type: 'ultimate' },
     teleport: { name: '순간 이동', description: '바라보는 방향으로 빠르게 순간이동합니다.', price: 1000, purchased: false, type: 'ultimate' },
+    auto_revive: { name: '자동 부활', description: '사망 시 자동으로 부활합니다. (1회용)', price: 0, purchased: false, type: 'ultimate' },
 };
 
 const shopConsumables = {
@@ -576,7 +578,18 @@ const player = {
             this.hp--;
             this.isInvincible = true;
             this.invincibleTimer = 120;
-            if (this.hp <= 0) gameOver();
+            if (this.hp <= 0) {
+                if (this.equippedUltimate === 'auto_revive' && ultimates.auto_revive.purchased) {
+                    this.hp = this.maxHp; // Restore full HP
+                    this.isInvincible = true;
+                    this.invincibleTimer = 180; // Longer invincibility for revive
+                    ultimates.auto_revive.purchased = false; // Consume the ultimate
+                    this.equippedUltimate = 'damage'; // Unequip after use
+                    alert('자동 부활 필살기가 발동되었습니다!');
+                } else {
+                    gameOver();
+                }
+            }
         }
     },
     usePotion() {
@@ -1478,11 +1491,9 @@ function updateGameOverAnimation() {
             if (previousGameState === 'survival') {
                 goToVillage();
             } else {
-                // Instead of reloading, go back to the login/start screen
-                loginContainer.style.display = 'block';
-                gameContainer.style.display = 'none';
-                sessionStorage.removeItem('loggedInUser'); // Clear login state
-                // Optionally, reset player stats here if not done by showGame/login
+                // Always go to village after game over
+                goToVillage();
+                // Reset player stats and game state for a fresh start in village
                 player.hp = player.maxHp;
                 player.coins = 0;
                 stage = 1;
@@ -1500,7 +1511,7 @@ function updateGameOverAnimation() {
                 isGroundSlippery = false;
                 isFightingHiddenBoss = false;
                 isSpawningNextBoss = false;
-                gameState = 'story'; // Reset to story or initial state
+                // gameState is set to 'village' by goToVillage()
                 storyPage = 0; // Reset story page
             }
         }
@@ -1585,6 +1596,7 @@ function createDashParticle(x, y) {
 const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
     merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue', dialogue: "서바이벌 모드를 시작하시겠습니까? (E)" }, // Changed back to blue
+    gachaMachine: { x: 700, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'gold', dialogue: "뽑기를 하시겠습니까? (E)" },
     radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' },
     petSeller: { x: 250, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'brown', dialogue: "펫을 구매하시겠습니까? (E)" },
     minigameHost: { x: 500, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'cyan', dialogue: "미니게임을 플레이하시겠습니까? (E)" }
@@ -1820,33 +1832,25 @@ function handleMouseClick(e) {
         if (isColliding(mousePos, { x: 250, y: 340, width: 300, height: 50 })) {
             startShootingMinigame();
         }
-    } else if (gameState === 'minigame_card') {
-        if (minigameState.flippedCards.length < 2) {
-            minigameState.cards.forEach(card => {
-                if (!card.isFlipped && isColliding(mousePos, card)) {
-                    card.isFlipped = true;
-                    minigameState.flippedCards.push(card);
-
-                    if (minigameState.flippedCards.length === 2) {
-                        // Check for match
-                        if (minigameState.flippedCards[0].type === minigameState.flippedCards[1].type) {
-                            minigameState.flippedCards[0].isMatched = true;
-                            minigameState.flippedCards[1].isMatched = true;
-                            minigameState.matches++;
-                            minigameState.flippedCards = [];
-                        } else {
-                            // No match, flip back after a delay
-                            setTimeout(() => {
-                                minigameState.flippedCards[0].isFlipped = false;
-                                minigameState.flippedCards[1].isFlipped = false;
-                                minigameState.flippedCards = [];
-                            }, 1000);
-                        }
-                    }
-                }
-            });
+    } else if (activeUI === 'minigameSelection') {
+        // Card-Flipping Game Button
+        if (isColliding(mousePos, { x: 250, y: 200, width: 300, height: 50 })) {
+            startCardMinigame();
         }
-    } else if (gameState === 'minigame_shooting') {
+        // Rhythm Game Button
+        if (isColliding(mousePos, { x: 250, y: 270, width: 300, height: 50 })) {
+            startRhythmMinigame();
+        }
+        // Shooting Gallery Button
+        if (isColliding(mousePos, { x: 250, y: 340, width: 300, height: 50 })) {
+            startShootingMinigame();
+        }
+    } else if (activeUI === 'gacha') { // Gacha draw button interaction
+        const drawButton = { x: STAGE_WIDTH / 2 - 100, y: 300, width: 200, height: 50 };
+        if (isColliding(mousePos, drawButton)) {
+            performGachaDraw();
+        }
+    } else if (gameState === 'minigame_card') {
         for (let i = minigameState.targets.length - 1; i >= 0; i--) {
             const target = minigameState.targets[i];
             if (isColliding(mousePos, target)) {
@@ -1905,6 +1909,7 @@ function draw() {
     else if (activeUI === 'merchant_choice') drawMerchantChoiceUI(); // New condition for merchant choice
     else if (activeUI === 'petShop') drawPetShopUI();
     else if (activeUI === 'minigameSelection') drawMinigameSelectionUI();
+    else if (activeUI === 'gacha') drawGachaUI(); // New condition for gacha UI
 }
 
 // --- 스토리 로직 ---
@@ -2670,6 +2675,16 @@ function updateVillageLogic() {
         else if (isColliding(player, npcs.minigameHost)) {
             activeUI = 'minigameSelection';
         }
+        else if (isColliding(player, npcs.petSeller)) {
+            activeUI = 'petShop';
+        }
+        else if (isColliding(player, npcs.minigameHost)) {
+            activeUI = 'minigameSelection';
+        }
+        else if (isColliding(player, npcs.gachaMachine)) { // New gacha interaction
+            activeUI = 'gacha';
+            gachaResult = ''; // Clear previous gacha result
+        }
         else if (isColliding(player, npcs.radio)) {
             if (!isFightingHiddenBoss) {
                 const answer = prompt("비밀 코드를 입력하십시오.");
@@ -2937,6 +2952,30 @@ function drawSurvivalUI() {
     ctx.strokeStyle = 'white'; ctx.strokeRect(20, 140, 200, 20);
     ctx.fillStyle = 'white'; ctx.font = '14px Arial';
     ctx.fillText('필살기 (M)', 230, 155);
+}
+
+function drawGachaUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('뽑기', STAGE_WIDTH / 2, 150);
+    ctx.font = '20px Arial';
+    ctx.fillText('100 코인으로 뽑기를 진행하시겠습니까?', STAGE_WIDTH / 2, 200);
+    ctx.fillText(`현재 코인: ${player.coins}`, STAGE_WIDTH / 2, 230);
+
+    // Draw button
+    const drawButton = { x: STAGE_WIDTH / 2 - 100, y: 300, width: 200, height: 50 };
+    ctx.strokeStyle = 'white';
+    ctx.strokeRect(drawButton.x, drawButton.y, drawButton.width, drawButton.height);
+    ctx.fillText('뽑기', STAGE_WIDTH / 2, 330);
+
+    // Display result
+    ctx.font = '24px Arial';
+    ctx.fillText(gachaResult, STAGE_WIDTH / 2, 400);
+
+    ctx.textAlign = 'left';
 }
 
 function drawQuestUI() {
@@ -3755,6 +3794,41 @@ function nextSurvivalWave() {
     const enemiesToSpawn = 5 + survivalWave * 2;
     for (let i = 0; i < enemiesToSpawn; i++) {
         setTimeout(createEnemy, i * 500);
+    }
+}
+
+function performGachaDraw() {
+    const gachaCost = 100; // Example cost
+    if (player.coins < gachaCost) {
+        gachaResult = '코인이 부족합니다!';
+        return;
+    }
+
+    player.coins -= gachaCost;
+
+    const rand = Math.random();
+    if (rand < 0.20) { // 20% chance for ultimate
+        if (!ultimates.auto_revive.purchased) { // Only give if not already owned
+            ultimates.auto_revive.purchased = true;
+            gachaResult = '축하합니다! 자동 부활 필살기를 획득했습니다!';
+        } else { // If already owned, give coins instead
+            gachaResult = '이미 자동 부활 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
+            player.coins += 500;
+        }
+    } else { // 80% chance for coins
+        let coinAmount;
+        const coinRand = Math.random();
+        if (coinRand < 0.4) { // 40% for 1-20 coins
+            coinAmount = Math.floor(Math.random() * 20) + 1;
+        } else if (coinRand < 0.7) { // 30% for 21-50 coins
+            coinAmount = Math.floor(Math.random() * 30) + 21;
+        } else if (coinRand < 0.9) { // 20% for 51-80 coins
+            coinAmount = Math.floor(Math.random() * 30) + 51;
+        } else { // 10% for 81-100 coins
+            coinAmount = Math.floor(Math.random() * 20) + 81;
+        }
+        player.coins += coinAmount;
+        gachaResult = `${coinAmount} 코인을 획득했습니다!`;
     }
 }
 
