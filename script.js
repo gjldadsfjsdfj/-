@@ -1686,7 +1686,7 @@ function handleKeyDown(e) {
     if (key === 'p') player.usePotion();
     if (key === 'b') keys.b = true;
     if (key === 'm') {
-        if ((gameState === 'stage' || gameState === 'tutorial') && ultimateGauge >= 100 && !isUltimateActive) {
+        if ((gameState === 'stage' || gameState === 'tutorial' || gameState === 'survival') && ultimateGauge >= 100 && !isUltimateActive) {
             isUltimateActive = true;
             ultimateTimer = ULTIMATE_DURATION;
             if (player.equippedUltimate === 'teleport') {
