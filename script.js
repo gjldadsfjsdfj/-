@@ -291,6 +291,7 @@ const ultimates = {
     vampiric_aura: { name: '흡혈 오라', description: '10초간 적을 공격 시 체력을 회복합니다.', price: 800, purchased: false, type: 'ultimate' },
     teleport: { name: '순간 이동', description: '바라보는 방향으로 빠르게 순간이동합니다.', price: 1000, purchased: false, type: 'ultimate' },
     auto_revive: { name: '자동 부활', description: '사망 시 자동으로 부활합니다. (1회용)', price: 0, purchased: false, type: 'ultimate' },
+    sports_car: { name: '스포츠카 변신', description: '10초간 스포츠카로 변신하여 매우 빠르게 이동합니다.', price: 0, purchased: false, type: 'ultimate' },
 };
 
 const shopConsumables = {
@@ -335,6 +336,11 @@ const player = {
     isSlowed: false,
     slowTimer: 0,
     pet: null,
+    isTransformed: false,
+    transformedType: null, // 'sports_car' or 'airplane'
+    originalSpeed: 0,
+    originalWidth: 0,
+    originalHeight: 0,
 
     draw() {
         const bodyY = this.y + this.headRadius * 2;
@@ -439,6 +445,40 @@ const player = {
     },
 
     update() {
+        if (this.isTransformed && this.transformedType === 'sports_car') {
+            // Car movement
+            if (keys.left) this.x -= this.speed;
+            if (keys.right) this.x += this.speed;
+            // Keep car on ground
+            this.y = STAGE_HEIGHT - GROUND_HEIGHT - this.height;
+            this.dy = 0; // No gravity effect
+            this.isJumping = false; // Cannot jump
+
+            // Collision with enemies (ramming)
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                if (isColliding(this, enemies[i])) {
+                    enemies.splice(i, 1); // Destroy enemy on collision
+                    ultimateGauge = Math.min(100, ultimateGauge + 5); // Small gauge gain
+                }
+            }
+
+            // Revert transformation when ultimateTimer runs out
+            if (isUltimateActive && this.equippedUltimate === 'sports_car') {
+                ultimateTimer -= 1 / 60;
+                if (ultimateTimer <= 0) {
+                    isUltimateActive = false;
+                    ultimateGauge = 0;
+                    this.isTransformed = false;
+                    this.transformedType = null;
+                    this.speed = this.originalSpeed; // Revert speed
+                    this.width = this.originalWidth; // Revert size
+                    this.height = this.originalHeight;
+                    this.isInvincible = false; // No longer invincible
+                }
+            }
+            return; // Skip normal player update logic
+        }
+
         if (this.dashCooldown > 0) this.dashCooldown--;
         if (this.slowTimer > 0) {
             this.slowTimer--;
@@ -1716,6 +1756,19 @@ function handleKeyDown(e) {
                 });
                 isUltimateActive = false;
                 ultimateGauge = 0;
+            } else if (player.equippedUltimate === 'sports_car') {
+                player.isTransformed = true;
+                player.transformedType = 'sports_car';
+                player.originalSpeed = player.speed;
+                player.speed = 15; // Very fast
+                player.originalWidth = player.width;
+                player.originalHeight = player.height;
+                player.width = 80; // Car width
+                player.height = 40; // Car height
+                player.isInvincible = true; // Car is invincible
+                player.invincibleTimer = ULTIMATE_DURATION * 60; // Invincible for duration
+                // Disable normal player actions
+                keys.left = false; keys.right = false; keys.down = false; keys.b = false;
             }
         }
     }
@@ -3807,12 +3860,20 @@ function performGachaDraw() {
     player.coins -= gachaCost;
 
     const rand = Math.random();
-    if (rand < 0.20) { // 20% chance for ultimate
+    if (rand < 0.10) { // 10% chance for auto_revive
         if (!ultimates.auto_revive.purchased) { // Only give if not already owned
             ultimates.auto_revive.purchased = true;
             gachaResult = '축하합니다! 자동 부활 필살기를 획득했습니다!';
         } else { // If already owned, give coins instead
             gachaResult = '이미 자동 부활 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
+            player.coins += 500;
+        }
+    } else if (rand < 0.20) { // 10% chance for sports_car
+        if (!ultimates.sports_car.purchased) {
+            ultimates.sports_car.purchased = true;
+            gachaResult = '축하합니다! 스포츠카 변신 필살기를 획득했습니다!';
+        } else {
+            gachaResult = '이미 스포츠카 변신 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
             player.coins += 500;
         }
     } else { // 80% chance for coins
