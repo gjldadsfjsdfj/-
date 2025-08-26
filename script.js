@@ -3603,9 +3603,10 @@ function createDoctorBoss() {
         x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
         hp: 5000, maxHp: 5000,
         attackCooldown: 180,
-        pattern: -1, // Start at -1 so the first pattern is 0
+        pattern: -1,
         state: 'idle', // idle, summon_enemies, roll_bombs, rain_projectiles
         stateTimer: 0,
+        summonedEnemies: 0,
 
         draw() {
             // Green doctor appearance
@@ -3645,43 +3646,46 @@ function createDoctorBoss() {
             this.attackCooldown--;
             if (this.attackCooldown <= 0 && this.state === 'idle') {
                 this.state = 'acting';
-                this.pattern = (this.pattern + 1) % 3; // Cycle through patterns
-                this.attackCooldown = 300; // Cooldown between patterns
-
+                this.pattern = (this.pattern + 1) % 3;
+                this.attackCooldown = 120; // Cooldown for next pattern
+                
                 switch (this.pattern) {
                     case 0: // Summon Enemies
-                        this.stateTimer = 30 * 100 / 60; // Time for all summons
-                        this.attackCooldown = 30 * 100 + 2000; // Wait for summons to finish + 2s
-                        for (let i = 0; i < 30; i++) {
-                            setTimeout(() => {
-                                if (!boss) return;
-                                const enemy = createEnemy();
-                                enemy.x = STAGE_WIDTH;
-                                enemy.speed = -(Math.random() * 2 + 1); // Randomize speed
-                            }, i * 100);
-                        }
+                        this.stateTimer = 30 * 5; // 5 frames between each summon
+                        this.summonedEnemies = 0;
+                        this.attackCooldown = this.stateTimer + 120; // Cooldown after this pattern
                         break;
                     case 1: // Roll Bombs
-                        this.stateTimer = 5 * 60; // 5 seconds of rolling bombs
-                        this.attackCooldown = 5 * 60 + 120;
+                        this.stateTimer = 5 * 60; // 5 seconds
+                        this.attackCooldown = this.stateTimer + 120;
                         break;
                     case 2: // Rain Projectiles
-                        this.stateTimer = 5 * 60; // 5 seconds of rain
-                        this.attackCooldown = 5 * 60 + 120;
+                        this.stateTimer = 5 * 60; // 5 seconds
+                        this.attackCooldown = this.stateTimer + 120;
                         break;
                 }
             }
 
             if (this.state === 'acting') {
                 this.stateTimer--;
+
+                // Execute pattern logic
                 switch (this.pattern) {
+                    case 0: // Summon Enemies
+                        if (this.stateTimer > 0 && this.stateTimer % 5 === 0 && this.summonedEnemies < 30) {
+                            const enemy = createEnemy();
+                            enemy.x = STAGE_WIDTH;
+                            enemy.speed = -(Math.random() * 2 + 1);
+                            this.summonedEnemies++;
+                        }
+                        break;
                     case 1: // Rolling Bombs
-                        if (this.stateTimer % 30 === 0) {
+                        if (this.stateTimer > 0 && this.stateTimer % 30 === 0) {
                             this.rollBomb();
                         }
                         break;
                     case 2: // Raining Projectiles
-                        if (this.stateTimer % 10 === 0) {
+                        if (this.stateTimer > 0 && this.stateTimer % 10 === 0) {
                             this.rainProjectile();
                         }
                         break;
