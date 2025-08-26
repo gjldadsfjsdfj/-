@@ -134,11 +134,12 @@ let backgroundX = 0;
 let isGroundSlippery = false;
 let isOneShotMode = false; // 치트키: 한방 모드
 let isSpawningNextBoss = false;
-let isFightingHiddenBoss = false;
+
 let isPoweredUp = false;
 let powerUpTimer = 0;
 let numberInputSequence = ''; // '1010' 입력을 위한 변수
 let showNumberInput = false; // 입력된 숫자를 화면에 표시할지 여부
+let cheatCodeSequence = '';
 let minigameState = {};
 let gameOverAnimationState = {};
 let isGeminiModeUsed = false;
@@ -278,6 +279,12 @@ const stages = [
         bossSpawnTime: 0,
         drawBackground: drawStage11Background,
         createBoss: createStage11Boss,
+    },
+    { // Stage 12 - Hidden Boss (Doctor)
+        type: 'boss',
+        bossSpawnTime: 0,
+        drawBackground: drawStage10Background, // Using lab background
+        createBoss: createDoctorBoss,
     }
 ];
 
@@ -1233,144 +1240,7 @@ function createStage7Boss() {
     };
 }
 
-function createHiddenBoss() {
-    isFightingHiddenBoss = true;
-    boss = {
-        x: STAGE_WIDTH / 2 - 100, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 200, height: 200,
-        hp: 5000, maxHp: 5000,
-        attackCooldown: 180,
-        pattern: 0,
-        state: 'idle',
-        stateTimer: 0,
-        draw() {
-            const centerX = this.x + this.width / 2;
-            const centerY = this.y + this.height / 2;
 
-            // Hoodie
-            ctx.fillStyle = '#1a1a1a'; // Dark gray hoodie
-            ctx.beginPath();
-            ctx.moveTo(this.x, this.y + this.height);
-            ctx.lineTo(this.x, centerY);
-            ctx.quadraticCurveTo(centerX, this.y - 20, this.x + this.width, centerY);
-            ctx.lineTo(this.x + this.width, this.y + this.height);
-            ctx.closePath();
-            ctx.fill();
-
-            // Face shadow
-            ctx.fillStyle = '#000';
-            ctx.fillRect(centerX - 50, centerY - 20, 100, 80);
-
-            // Glowing green glasses
-            ctx.fillStyle = '#00ff00';
-            ctx.fillRect(centerX - 40, centerY, 30, 15);
-            ctx.fillRect(centerX + 10, centerY, 30, 15);
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-            ctx.shadowColor = '#00ff00';
-            ctx.shadowBlur = 20;
-            ctx.fillRect(centerX - 45, centerY - 5, 40, 25);
-            ctx.fillRect(centerX + 5, centerY - 5, 40, 25);
-            ctx.shadowBlur = 0;
-
-            // Laptop screen glow on body
-            ctx.fillStyle = 'rgba(0, 100, 255, 0.2)';
-            ctx.fillRect(this.x + 20, this.y + this.height - 80, this.width - 40, 60);
-        },
-        update() {
-            this.attackCooldown--;
-            if (this.attackCooldown <= 0 && this.state === 'idle') {
-                this.state = 'acting';
-                this.pattern = Math.floor(Math.random() * 3);
-                switch (this.pattern) {
-                    case 0: // Bomb barrage
-                        this.stateTimer = 180; // 3 seconds of bombs
-                        this.attackCooldown = 240;
-                        break;
-                    case 1: // Slippery floor + lightning + laser
-                        this.stateTimer = 600; // 10 seconds for this hell
-                        isGroundSlippery = true;
-                        this.attackCooldown = 720;
-                        break;
-                    case 2: // Balloon burst
-                        this.stateTimer = 180;
-                        this.attackCooldown = 240;
-                        break;
-                }
-            }
-
-            if (this.state === 'acting') {
-                this.stateTimer--;
-                switch (this.pattern) {
-                    case 0: // Bomb barrage
-                        if (this.stateTimer % 15 === 0) {
-                            this.shootHorizontalBomb();
-                        }
-                        break;
-                    case 1: // Slippery floor combo
-                        if (this.stateTimer % 120 === 0) { // Every 2 seconds
-                            createLightningZone(player.x - 50);
-                        }
-                        if (this.stateTimer % 60 === 0) { // Every 1 second
-                            this.shootSlowLaser();
-                        }
-                        break;
-                    case 2: // Balloon burst
-                        if (this.stateTimer === 180 || this.stateTimer === 120 || this.stateTimer === 60) {
-                             for (let i = 0; i < 5; i++) bossProjectiles.push(createBalloon(this.x, this.y + this.height / 2));
-                        }
-                        break;
-                }
-
-                if (this.stateTimer <= 0) {
-                    this.state = 'idle';
-                    if (this.pattern === 1) {
-                        isGroundSlippery = false;
-                    }
-                }
-            }
-        },
-        shootHorizontalBomb() {
-            bossProjectiles.push({
-                x: 0, y: STAGE_HEIGHT - GROUND_HEIGHT - 40, // Fly just above the ground
-                width: 30, height: 30, speedX: 8, type: 'bomb',
-                draw() {
-                    ctx.fillStyle = 'red';
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, this.width/2, 0, Math.PI*2);
-                    ctx.fill();
-                },
-                update() {
-                    this.x += this.speedX;
-                    // Explode on player collision or off-screen
-                    if (isColliding(player, this) || this.x > STAGE_WIDTH) {
-                        if(isColliding(player, this)) player.takeDamage();
-                        const index = bossProjectiles.indexOf(this);
-                        if(index > -1) bossProjectiles.splice(index, 1);
-                    }
-                }
-            });
-        },
-        shootSlowLaser() {
-            bossProjectiles.push({
-                x: STAGE_WIDTH, y: Math.random() * (STAGE_HEIGHT - GROUND_HEIGHT - 20),
-                width: STAGE_WIDTH, height: 15, timer: 60, // 1 second duration
-                speedX: 2, // Slow moving laser
-                type: 'wide_laser',
-                draw() {
-                    ctx.fillStyle = `rgba(255, 100, 0, ${0.2 + (this.timer / 60) * 0.6})`;
-                    ctx.fillRect(this.x, this.y, this.width, this.height);
-                },
-                update() {
-                    this.timer--;
-                    this.x -= this.speedX; // Move slowly from right to left
-                    if (this.timer <= 0) {
-                        const index = bossProjectiles.indexOf(this);
-                        if (index > -1) bossProjectiles.splice(index, 1);
-                    }
-                }
-            });
-        }
-    };
-}
 
 
 function createBalloon(x, y) {
@@ -1673,6 +1543,18 @@ function handleKeyDown(e) {
     }
 
     // --- 치트키 ---
+    cheatCodeSequence += key;
+    if (cheatCodeSequence.length > 4) {
+        cheatCodeSequence = cheatCodeSequence.slice(-4);
+    }
+    if (cheatCodeSequence === 'tode') {
+        alert("히든 스테이지가 개방됩니다.");
+        stage = 12; // Using stage 12 for the new hidden boss
+        goToStage();
+        cheatCodeSequence = ''; // Reset sequence
+        return;
+    }
+
     if (key === 'h') {
         isOneShotMode = !isOneShotMode;
         alert(`한방 모드 ${isOneShotMode ? '활성화' : '비활성화'}`);
@@ -2739,17 +2621,6 @@ function updateVillageLogic() {
         } else if (isColliding(player, npcs.gachaMachine)) { // New gacha interaction
             activeUI = 'gacha';
             gachaResult = ''; // Clear previous gacha result
-        } else if (isColliding(player, npcs.radio)) {
-            if (!isFightingHiddenBoss) {
-                const answer = prompt("비밀 코드를 입력하십시오.");
-                if (answer === "seungjae") {
-                    alert("히든 스테이지가 개방됩니다.");
-                    goToStage();
-                    setTimeout(createHiddenBoss, 1000);
-                } else {
-                    alert("코드가 틀렸습니다.");
-                }
-            }
         }
         keys.e = false;
     }
@@ -3723,6 +3594,140 @@ function createStage11Boss() {
                     isFire: true, // Custom property for collision
                 });
             }
+        }
+    };
+}
+
+function createDoctorBoss() {
+    boss = {
+        x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
+        hp: 5000, maxHp: 5000,
+        attackCooldown: 180,
+        pattern: 0,
+        state: 'idle', // idle, summon_enemies, roll_bombs, rain_projectiles
+        stateTimer: 0,
+
+        draw() {
+            // Green doctor appearance
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            // Body (lab coat)
+            ctx.fillStyle = 'white';
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            
+            // Green shirt
+            ctx.fillStyle = 'green';
+            ctx.fillRect(centerX - 20, this.y, 40, this.height);
+
+            // Head
+            ctx.fillStyle = '#f0ddd7'; // Skin color
+            ctx.beginPath();
+            ctx.arc(centerX, this.y, 40, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Simple glasses
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(centerX - 20, this.y - 5, 10, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(centerX + 20, this.y - 5, 10, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(centerX - 10, this.y - 5);
+            ctx.lineTo(centerX + 10, this.y - 5);
+            ctx.stroke();
+        },
+
+        update() {
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0 && this.state === 'idle') {
+                this.state = 'acting';
+                this.pattern = (this.pattern + 1) % 3; // Cycle through patterns
+                this.attackCooldown = 240; // Cooldown between patterns
+
+                switch (this.pattern) {
+                    case 0: // Summon Enemies
+                        this.stateTimer = 30 * 5; // 5 seconds to summon
+                        for (let i = 0; i < 30; i++) {
+                            setTimeout(() => {
+                                const enemy = createEnemy();
+                                enemy.x = STAGE_WIDTH;
+                                enemy.speed = -Math.abs(enemy.speed); // Move left
+                            }, i * 100);
+                        }
+                        break;
+                    case 1: // Roll Bombs
+                        this.stateTimer = 5 * 60; // 5 seconds of rolling bombs
+                        break;
+                    case 2: // Rain Projectiles
+                        this.stateTimer = 5 * 60; // 5 seconds of rain
+                        break;
+                }
+            }
+
+            if (this.state === 'acting') {
+                this.stateTimer--;
+                switch (this.pattern) {
+                    case 1: // Rolling Bombs
+                        if (this.stateTimer % 30 === 0) {
+                            this.rollBomb();
+                        }
+                        break;
+                    case 2: // Raining Projectiles
+                        if (this.stateTimer % 10 === 0) {
+                            this.rainProjectile();
+                        }
+                        break;
+                }
+
+                if (this.stateTimer <= 0) {
+                    this.state = 'idle';
+                }
+            }
+        },
+
+        rollBomb() {
+            bossProjectiles.push({
+                x: this.x,
+                y: STAGE_HEIGHT - GROUND_HEIGHT - 20,
+                width: 20,
+                height: 20,
+                speedX: -5,
+                type: 'rolling_bomb',
+                draw() {
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                },
+                update() {
+                    this.x += this.speedX;
+                }
+            });
+        },
+
+        rainProjectile() {
+            const isFire = Math.random() < 0.5;
+            bossProjectiles.push({
+                x: Math.random() * STAGE_WIDTH,
+                y: 0,
+                width: 20,
+                height: 20,
+                speedY: 5,
+                type: isFire ? 'fireball' : 'iceball',
+                draw() {
+                    ctx.fillStyle = isFire ? 'red' : 'blue';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                },
+                update() {
+                    this.y += this.speedY;
+                }
+            });
         }
     };
 }
