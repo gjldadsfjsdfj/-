@@ -3603,7 +3603,7 @@ function createDoctorBoss() {
         x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
         hp: 5000, maxHp: 5000,
         attackCooldown: 180,
-        pattern: 0,
+        pattern: -1, // Start at -1 so the first pattern is 0
         state: 'idle', // idle, summon_enemies, roll_bombs, rain_projectiles
         stateTimer: 0,
 
@@ -3646,24 +3646,28 @@ function createDoctorBoss() {
             if (this.attackCooldown <= 0 && this.state === 'idle') {
                 this.state = 'acting';
                 this.pattern = (this.pattern + 1) % 3; // Cycle through patterns
-                this.attackCooldown = 240; // Cooldown between patterns
+                this.attackCooldown = 300; // Cooldown between patterns
 
                 switch (this.pattern) {
                     case 0: // Summon Enemies
-                        this.stateTimer = 30 * 5; // 5 seconds to summon
+                        this.stateTimer = 30 * 100 / 60; // Time for all summons
+                        this.attackCooldown = 30 * 100 + 2000; // Wait for summons to finish + 2s
                         for (let i = 0; i < 30; i++) {
                             setTimeout(() => {
+                                if (!boss) return;
                                 const enemy = createEnemy();
                                 enemy.x = STAGE_WIDTH;
-                                enemy.speed = -Math.abs(enemy.speed); // Move left
+                                enemy.speed = -(Math.random() * 2 + 1); // Randomize speed
                             }, i * 100);
                         }
                         break;
                     case 1: // Roll Bombs
                         this.stateTimer = 5 * 60; // 5 seconds of rolling bombs
+                        this.attackCooldown = 5 * 60 + 120;
                         break;
                     case 2: // Rain Projectiles
                         this.stateTimer = 5 * 60; // 5 seconds of rain
+                        this.attackCooldown = 5 * 60 + 120;
                         break;
                 }
             }
@@ -3690,12 +3694,31 @@ function createDoctorBoss() {
         },
 
         rollBomb() {
+            // From left
             bossProjectiles.push({
-                x: this.x,
+                x: 0,
                 y: STAGE_HEIGHT - GROUND_HEIGHT - 20,
                 width: 20,
                 height: 20,
-                speedX: -5,
+                speedX: 5, // Move right
+                type: 'rolling_bomb',
+                draw() {
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                },
+                update() {
+                    this.x += this.speedX;
+                }
+            });
+            // From right
+            bossProjectiles.push({
+                x: STAGE_WIDTH,
+                y: STAGE_HEIGHT - GROUND_HEIGHT - 20,
+                width: 20,
+                height: 20,
+                speedX: -5, // Move left
                 type: 'rolling_bomb',
                 draw() {
                     ctx.fillStyle = 'black';
