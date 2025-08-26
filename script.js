@@ -1766,6 +1766,7 @@ function handleKeyDown(e) {
                 isUltimateActive = false;
                 ultimateGauge = 0;
             } else if (player.equippedUltimate === 'sports_car') {
+                ultimateTimer = 20; // 20초로 설정
                 player.isTransformed = true;
                 player.transformedType = 'sports_car';
                 player.originalSpeed = player.speed;
@@ -1775,7 +1776,7 @@ function handleKeyDown(e) {
                 player.width = 80; // Car width
                 player.height = 40; // Car height
                 player.isInvincible = true; // Car is invincible
-                player.invincibleTimer = ULTIMATE_DURATION * 60; // Invincible for duration
+                player.invincibleTimer = 20 * 60; // Invincible for duration
                 // Disable normal player actions
                 keys.left = false; keys.right = false; keys.down = false; keys.b = false;
             }
@@ -1828,7 +1829,7 @@ function handleMouseClick(e) {
 
     if (gameState === 'menu') {
         Object.keys(ultimates).forEach((id, index) => {
-            const ultButton = { x: 250, y: 150 + index * 60, width: 300, height: 50 };
+            const ultButton = { x: 250, y: 100 + index * 50, width: 300, height: 45 };
             if (isColliding(mousePos, ultButton) && ultimates[id].purchased) {
                 player.equippedUltimate = id;
             }
@@ -2152,13 +2153,13 @@ function drawMenu() {
     ctx.fillStyle = 'white';
     ctx.font = '30px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('필살기 선택', STAGE_WIDTH / 2, 80);
+    ctx.fillText('필살기 선택', STAGE_WIDTH / 2, 50);
     ctx.font = '16px Arial';
-    ctx.fillText('장착할 필살기를 클릭하세요.', STAGE_WIDTH / 2, 120);
+    ctx.fillText('장착할 필살기를 클릭하세요.', STAGE_WIDTH / 2, 80);
 
     Object.keys(ultimates).forEach((id, index) => {
         const ult = ultimates[id];
-        const ultButton = { x: 250, y: 150 + index * 60, width: 300, height: 50 };
+        const ultButton = { x: 250, y: 100 + index * 50, width: 300, height: 45 };
 
         ctx.strokeStyle = player.equippedUltimate === id ? 'yellow' : 'white';
         ctx.lineWidth = player.equippedUltimate === id ? 4 : 2;
@@ -2170,13 +2171,13 @@ function drawMenu() {
         ctx.textAlign = 'left';
         ctx.fillText(ult.name, ultButton.x + 10, ultButton.y + 20);
         ctx.font = '12px Arial';
-        ctx.fillText(ult.description, ultButton.x + 10, ultButton.y + 40);
+        ctx.fillText(ult.description, ultButton.x + 10, ultButton.y + 38);
 
         if (!ult.purchased) {
             ctx.font = '16px Arial';
             ctx.textAlign = 'right';
             ctx.fillStyle = 'red';
-            ctx.fillText(`잠김`, ultButton.x + ultButton.width - 10, ultButton.y + 30);
+            ctx.fillText(`잠김`, ultButton.x + ultButton.width - 10, ultButton.y + 28);
             ctx.fillStyle = 'white';
         }
         ctx.globalAlpha = 1.0;
@@ -2295,7 +2296,7 @@ function updateStageLogic() {
         if (o.x < -o.width || o.x > STAGE_WIDTH) obstacles.splice(i, 1);
     }
 
-    if (isUltimateActive) {
+    if (isUltimateActive && player.equippedUltimate !== 'sports_car') {
         ultimateTimer -= 1 / 60;
         if (player.equippedUltimate === 'damage') {
              for (let i = enemies.length - 1; i >= 0; i--) {
@@ -2727,34 +2728,18 @@ function drawStageUI() {
 function updateVillageLogic() {
     player.update();
     if (keys.e) {
-        if (isColliding(player, npcs.villageChief)) activeUI = 'quest';
-        else if (isColliding(player, npcs.merchant)) {
+        if (isColliding(player, npcs.villageChief)) {
+            activeUI = 'quest';
+        } else if (isColliding(player, npcs.merchant)) {
             activeUI = 'merchant_choice'; // Set new UI state for merchant choice
-        }
-        else if (isColliding(player, npcs.petSeller)) {
+        } else if (isColliding(player, npcs.petSeller)) {
             activeUI = 'petShop';
-        }
-        else if (isColliding(player, npcs.minigameHost)) {
+        } else if (isColliding(player, npcs.minigameHost)) {
             activeUI = 'minigameSelection';
-        }
-<<<<<<< HEAD
-        else if (isColliding(player, npcs.petSeller)) {
-            activeUI = 'petShop';
-        }
-        else if (isColliding(player, npcs.minigameHost)) {
-            activeUI = 'minigameSelection';
-        }
-                else if (isColliding(player, npcs.petSeller)) {
-            activeUI = 'petShop';
-        }
-        else if (isColliding(player, npcs.minigameHost)) {
-            activeUI = 'minigameSelection';
-        }
-        else if (isColliding(player, npcs.gachaMachine)) { // New gacha interaction
+        } else if (isColliding(player, npcs.gachaMachine)) { // New gacha interaction
             activeUI = 'gacha';
             gachaResult = ''; // Clear previous gacha result
-        }
-        else if (isColliding(player, npcs.radio)) {
+        } else if (isColliding(player, npcs.radio)) {
             if (!isFightingHiddenBoss) {
                 const answer = prompt("비밀 코드를 입력하십시오.");
                 if (answer === "seungjae") {
@@ -2766,21 +2751,6 @@ function updateVillageLogic() {
                 }
             }
         }
-        else if (isColliding(player, npcs.radio)) {
-            if (!isFightingHiddenBoss) {
-                const answer = prompt("비밀 코드를 입력하십시오.");
-                if (answer === "seungjae") {
-                    alert("히든 스테이지가 개방됩니다.");
-                    goToStage();
-                    setTimeout(createHiddenBoss, 1000);
-                } else {
-                    alert("코드가 틀렸습니다.");
-                }
-            }
-        }
-=======
-        
->>>>>>> 95da020899e7b9a04a7754ea3a8bde0913eea500
         keys.e = false;
     }
 }
@@ -3802,6 +3772,7 @@ function nextStage() {
 }
 
 function resetStage() {
+    player.hp = player.maxHp;
     player.x = 100;
     player.y = STAGE_HEIGHT - GROUND_HEIGHT - player.height;
     player.enemyKillCount = 0;
