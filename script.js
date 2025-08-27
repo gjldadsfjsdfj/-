@@ -103,6 +103,8 @@ let villagePerson = {
 // 현재 표시될 대사와 타이머 변수
 let currentDialogue = '';
 let dialogueTimer = null;
+let radioKnockSequence = [];
+let lastKnockTime = 0;
 
 // --- 게임 상태 관리 ---
 let gameState = 'story'; // tutorial, menu, stage, village, ending, reviving, minigame_card, minigame_rhythm, minigame_shooting
@@ -294,6 +296,12 @@ const stages = [
             currentBossIndex = 0;
             stage7BossRush[currentBossIndex]();
         }
+    },
+    { // Stage 14 - The Static
+        type: 'boss',
+        bossSpawnTime: 0,
+        drawBackground: drawStaticBackground,
+        createBoss: createStaticBoss,
     }
 ];
 
@@ -1516,7 +1524,7 @@ const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
     merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue', dialogue: "서바이벌 모드를 시작하시겠습니까? (E)" }, // Changed back to blue
     gachaMachine: { x: 700, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'gold', dialogue: "뽑기를 하시겠습니까? (E)" },
-    radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' },
+    radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red', dialogue: "라디오에서 이상한 잡음이 들린다..." },
     petSeller: { x: 250, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'brown', dialogue: "펫을 구매하시겠습니까? (E)" },
     minigameHost: { x: 500, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'cyan', dialogue: "미니게임을 플레이하시겠습니까? (E)" },
     colosseumMaster: { x: 350, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: '#8B0000', dialogue: "콜로세움에 도전하시겠습니까? (E)" }
@@ -1614,6 +1622,10 @@ function handleKeyDown(e) {
             Math.pow(player.x - npcs.merchant.x, 2) +
             Math.pow(player.y - npcs.merchant.y, 2)
         );
+        const distanceRadio = Math.sqrt(
+            Math.pow(player.x - npcs.radio.x, 2) +
+            Math.pow(player.y - npcs.radio.y, 2)
+        );
         const interactionRange = 80; // 상호작용 범위
 
         if (distanceVillagePerson < interactionRange) {
@@ -1628,6 +1640,14 @@ function handleKeyDown(e) {
             }, 3000);
         } else if (distanceMerchant < interactionRange) { // New condition for merchant
             currentDialogue = npcs.merchant.dialogue;
+            if (dialogueTimer) {
+                clearTimeout(dialogueTimer);
+            }
+            dialogueTimer = setTimeout(() => {
+                currentDialogue = '';
+            }, 3000);
+        } else if (distanceRadio < interactionRange) {
+            currentDialogue = npcs.radio.dialogue;
             if (dialogueTimer) {
                 clearTimeout(dialogueTimer);
             }
@@ -2170,6 +2190,15 @@ function updateStageLogic() {
     
     if (isBossFight && boss) { 
         boss.update(); 
+        if (boss.clones) {
+            for (let i = boss.clones.length - 1; i >= 0; i--) {
+                const clone = boss.clones[i];
+                clone.update();
+                if (clone.life <= 0) {
+                    boss.clones.splice(i, 1);
+                }
+            }
+        }
     }
     
     bubbles.forEach((b, i) => {
@@ -2283,7 +2312,12 @@ function checkStageCollisions() {
                     player.coins += 1000;
                     playSound('coin');
 
-                    if (stage === 13) {
+                    if (stage === 14) { // The Static defeated
+                        goToVillage();
+                        return;
+                    }
+
+                    if (stage === 13) { // Colosseum boss rush logic
                         nextStage();
                         return;
                     }
@@ -2306,6 +2340,19 @@ function checkStageCollisions() {
                     }
                 }
                 break;
+            }
+        }
+
+        if (boss.clones) {
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                const laser = lasers[i];
+                for (let j = boss.clones.length - 1; j >= 0; j--) {
+                    if (isColliding(laser, boss.clones[j])) {
+                        boss.clones.splice(j, 1);
+                        lasers.splice(i, 1);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -2343,7 +2390,12 @@ function drawStage() {
 
     player.draw();
     enemies.forEach(e => e.draw());
-    if (isBossFight && boss) boss.draw();
+    if (isBossFight && boss) {
+        boss.draw();
+        if (boss.clones && boss.clones.length > 0) {
+            boss.clones.forEach(clone => clone.draw());
+        }
+    }
     bossProjectiles.forEach(p => p.draw());
     lightningZones.forEach(z => z.draw());
     residualElectrics.forEach(r => r.draw());
@@ -2614,6 +2666,144 @@ function drawColosseumBackground() {
     ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
 }
 
+function drawStaticBackground() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    for (let i = 0; i < 100; i++) {
+        const x = Math.random() * STAGE_WIDTH;
+        const y = Math.random() * STAGE_HEIGHT;
+        const size = Math.random() * 2;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(x, y, size, size);
+    }
+}
+
+function createStaticBoss() {
+    boss = {
+        x: STAGE_WIDTH / 2 - 50, y: STAGE_HEIGHT / 2 - 50, width: 100, height: 100,
+        hp: 6000, maxHp: 6000,
+        attackCooldown: 120,
+        pattern: 0,
+        state: 'idle', // idle, screech, field, clones
+        stateTimer: 0,
+        clones: [],
+
+        draw() {
+            // Swirling static vortex
+            for (let i = 0; i < 50; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * this.width / 2;
+                const x = this.x + this.width / 2 + Math.cos(angle) * radius;
+                const y = this.y + this.height / 2 + Math.sin(angle) * radius;
+                const size = Math.random() * 3;
+                ctx.fillStyle = Math.random() < 0.5 ? 'white' : 'black';
+                ctx.fillRect(x, y, size, size);
+            }
+
+            // Pulsating red eye
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, 10 + Math.sin(frameCount * 0.3) * 5, 0, Math.PI * 2);
+            ctx.fill();
+        },
+
+        update() {
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0 && this.state === 'idle') {
+                this.state = 'acting';
+                this.pattern = Math.floor(Math.random() * 3);
+                this.attackCooldown = 180;
+
+                switch (this.pattern) {
+                    case 0: // Screech Wave
+                        this.stateTimer = 60;
+                        this.screechWave();
+                        break;
+                    case 1: // Static Field
+                        this.stateTimer = 180;
+                        this.staticField();
+                        break;
+                    case 2: // Digital Clones
+                        this.stateTimer = 300; // Clones last for 5 seconds
+                        this.createClones();
+                        break;
+                }
+            }
+
+            if (this.state === 'acting') {
+                this.stateTimer--;
+                if (this.stateTimer <= 0) {
+                    this.state = 'idle';
+                    this.clones = []; // Clear clones when the attack is over
+                }
+            }
+        },
+
+        screechWave() {
+            bossProjectiles.push({
+                x: this.x, y: this.y + this.height / 2, width: 20, height: STAGE_HEIGHT, speed: 10, type: 'screech',
+                draw() { ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; ctx.fillRect(this.x, 0, this.width, this.height); },
+                update() { this.x += this.speed; }
+            });
+        },
+
+        staticField() {
+            const fieldX = Math.random() * (STAGE_WIDTH - 200);
+            const fieldY = Math.random() * (STAGE_HEIGHT - GROUND_HEIGHT - 100);
+            residualElectrics.push({
+                x: fieldX, y: fieldY, width: 200, height: 100, timer: 180,
+                draw() {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${0.1 + Math.random() * 0.1})`;
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                },
+                update() {
+                    this.timer--;
+                    if (isColliding(player, this)) {
+                        player.takeDamage();
+                        player.isSlowed = true;
+                        player.slowTimer = 10;
+                    }
+                }
+            });
+        },
+
+        createClones() {
+            for (let i = 0; i < 2; i++) {
+                this.clones.push({
+                    x: this.x + (i === 0 ? -200 : 200),
+                    y: this.y,
+                    width: this.width,
+                    height: this.height,
+                    draw() {
+                        ctx.globalAlpha = 0.5;
+                        // Swirling static vortex
+                        for (let i = 0; i < 25; i++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const radius = Math.random() * this.width / 2;
+                            const x = this.x + this.width / 2 + Math.cos(angle) * radius;
+                            const y = this.y + this.height / 2 + Math.sin(angle) * radius;
+                            const size = Math.random() * 2;
+                            ctx.fillStyle = Math.random() < 0.5 ? 'white' : 'black';
+                            ctx.fillRect(x, y, size, size);
+                        }
+                        ctx.globalAlpha = 1.0;
+                    },
+                    update() {
+                        this.x += this.speed; // Move horizontally
+                        this.life--;
+                        if (this.life <= 0) {
+                            // Clones will be removed in updateStageLogic
+                        }
+                    },
+                    speed: (i === 0 ? -2 : 2), // Move left or right
+                    life: 180 // Clones last for 3 seconds (60 frames/sec * 3 sec)
+                });
+            }
+        }
+    };
+}
+
 
 // --- UI 그리기 ---
 function drawStageUI() {
@@ -2662,25 +2852,42 @@ function drawStageUI() {
 }
 
 // --- 마을 로직 ---
+let radioPressCount = 0;
+
 function updateVillageLogic() {
     player.update();
     if (keys.e) {
-        if (isColliding(player, npcs.villageChief)) {
+        keys.e = false; // Consume the key press immediately
+
+        const interactionRange = 80;
+
+        // Check for interaction with radio first
+        if (isColliding(player, npcs.radio)) {
+            radioPressCount++;
+            if (radioPressCount >= 30) {
+                stage = 14; // Hidden radio boss stage
+                goToStage();
+                radioPressCount = 0; // Reset counter
+            } else {
+                currentDialogue = npcs.radio.dialogue + ` (${radioPressCount}/30)`;
+                if (dialogueTimer) clearTimeout(dialogueTimer);
+                dialogueTimer = setTimeout(() => { currentDialogue = ''; }, 1000);
+            }
+        } else if (isColliding(player, npcs.villageChief)) {
             activeUI = 'quest';
         } else if (isColliding(player, npcs.merchant)) {
-            activeUI = 'merchant_choice'; // Set new UI state for merchant choice
+            activeUI = 'merchant_choice';
         } else if (isColliding(player, npcs.petSeller)) {
             activeUI = 'petShop';
         } else if (isColliding(player, npcs.minigameHost)) {
             activeUI = 'minigameSelection';
-        } else if (isColliding(player, npcs.gachaMachine)) { // New gacha interaction
+        } else if (isColliding(player, npcs.gachaMachine)) {
             activeUI = 'gacha';
-            gachaResult = ''; // Clear previous gacha result
+            gachaResult = '';
         } else if (isColliding(player, npcs.colosseumMaster)) {
             stage = 13;
             goToStage();
         }
-        keys.e = false;
     }
 }
 
