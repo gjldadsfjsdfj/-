@@ -2221,7 +2221,12 @@ function updateStageLogic() {
         p.y += p.dy;
         p.life--;
         if (p.radius > 0.2) p.radius -= 0.1;
-        if (p.life <= 0) {
+
+        if (p.isShockwave && isColliding(player, {x: p.x, y: p.y, width: p.radius * 2, height: p.radius * 2})) {
+            player.takeDamage();
+        }
+
+        if (p.life <= 0 || p.x < 0 || p.x > STAGE_WIDTH) {
             particles.splice(i, 1);
         }
     }
@@ -3823,15 +3828,49 @@ function createCorruptedGolemBoss() {
         splitCount: 0,
 
         draw() {
-            const bodyColor = this.splitCount === 0 ? '#6B4226' : (this.splitCount === 1 ? '#805D3F' : '#A98D70');
-            ctx.fillStyle = bodyColor;
+            // Base stone body
+            ctx.fillStyle = '#696969'; // Weathered stone color
             ctx.fillRect(this.x, this.y, this.width, this.height);
 
-            // Glowing eyes
-            ctx.fillStyle = '#FF0000';
+            // Mossy patches
+            ctx.fillStyle = 'rgba(0, 80, 0, 0.5)';
+            ctx.fillRect(this.x + this.width * 0.1, this.y + this.height * 0.2, this.width * 0.3, this.height * 0.2);
+            ctx.fillRect(this.x + this.width * 0.6, this.y + this.height * 0.5, this.width * 0.2, this.height * 0.3);
+
+            // Parasitic vines
+            ctx.strokeStyle = '#8A2BE2'; // Sickly purple
+            ctx.lineWidth = 5 + this.splitCount * 3; // Vines get thicker as it splits
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y + this.height * 0.2);
+            ctx.lineTo(this.x + this.width, this.y + this.height * 0.8);
+            ctx.moveTo(this.x + this.width * 0.8, this.y);
+            ctx.lineTo(this.x + this.width * 0.2, this.y + this.height);
+            ctx.stroke();
+
+            // Glowing fungi sacs
+            const numFungi = 3 + this.splitCount * 2;
+            for (let i = 0; i < numFungi; i++) {
+                ctx.fillStyle = '#7CFC00'; // Toxic green
+                ctx.beginPath();
+                ctx.arc(this.x + Math.random() * this.width, this.y + Math.random() * this.height, 5 + Math.sin(frameCount * 0.1) * 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Eyes
+            // Dim, original eye
+            ctx.fillStyle = '#36454F'; // Charcoal grey
             ctx.beginPath();
             ctx.arc(this.x + this.width * 0.3, this.y + this.height * 0.3, 10, 0, Math.PI * 2);
-            ctx.arc(this.x + this.width * 0.7, this.y + this.height * 0.3, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glowing, corrupted eye
+            ctx.fillStyle = '#7CFC00';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width * 0.7, this.y + this.height * 0.3, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(124, 252, 0, 0.3)';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width * 0.7, this.y + this.height * 0.3, 20 + Math.sin(frameCount * 0.2) * 5, 0, Math.PI * 2);
             ctx.fill();
         },
 
@@ -3860,12 +3899,12 @@ function createCorruptedGolemBoss() {
                         if (this.stateTimer % 20 === 0) {
                             // Create a shockwave
                             particles.push({
-                                x: this.x + this.width / 2, y: STAGE_HEIGHT - GROUND_HEIGHT,
-                                dx: 10, dy: 0, radius: 10, color: '#8B4513', life: 20, startLife: 20, isShockwave: true
+                                x: this.x + this.width / 2, y: STAGE_HEIGHT - GROUND_HEIGHT - 10, // Adjusted y to be on the ground
+                                dx: 10, dy: 0, radius: 10, color: '#8B4513', life: 40, startLife: 40, isShockwave: true
                             });
                             particles.push({
-                                x: this.x + this.width / 2, y: STAGE_HEIGHT - GROUND_HEIGHT,
-                                dx: -10, dy: 0, radius: 10, color: '#8B4513', life: 20, startLife: 20, isShockwave: true
+                                x: this.x + this.width / 2, y: STAGE_HEIGHT - GROUND_HEIGHT - 10, // Adjusted y to be on the ground
+                                dx: -10, dy: 0, radius: 10, color: '#8B4513', life: 40, startLife: 40, isShockwave: true
                             });
                         }
                         break;
