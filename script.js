@@ -2150,6 +2150,10 @@ function updateStageLogic() {
                 enemies.length = 0;
                 createBoss();
             }
+        } else if (currentStageData.type === 'boss_rush' && !isBossFight) { // Colosseum boss rush
+            isBossFight = true;
+            enemies.length = 0;
+            createBoss();
         }
     }
 
