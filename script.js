@@ -285,6 +285,15 @@ const stages = [
         bossSpawnTime: 0,
         drawBackground: drawStage10Background, // Using lab background
         createBoss: createDoctorBoss,
+    },
+    { // Stage 13 - Colosseum
+        type: 'boss_rush',
+        drawBackground: drawColosseumBackground,
+        createBoss: () => { // Boss rush for the Colosseum
+            stage7BossRush = [createStage1Boss, createStage2Boss, createStage3Boss, createStage5Boss, createStage6Boss, createStage7Boss, createRodyBoss, createStage11Boss, createDoctorBoss, createCorruptedGolemBoss];
+            currentBossIndex = 0;
+            stage7BossRush[currentBossIndex]();
+        }
     }
 ];
 
@@ -1509,7 +1518,8 @@ const npcs = {
     gachaMachine: { x: 700, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'gold', dialogue: "뽑기를 하시겠습니까? (E)" },
     radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red' },
     petSeller: { x: 250, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'brown', dialogue: "펫을 구매하시겠습니까? (E)" },
-    minigameHost: { x: 500, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'cyan', dialogue: "미니게임을 플레이하시겠습니까? (E)" }
+    minigameHost: { x: 500, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'cyan', dialogue: "미니게임을 플레이하시겠습니까? (E)" },
+    colosseumMaster: { x: 350, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: '#8B0000', dialogue: "콜로세움에 도전하시겠습니까? (E)" }
 };
 
 // --- 입력 처리 ---
@@ -1777,31 +1787,41 @@ function handleMouseClick(e) {
         if (isColliding(mousePos, { x: 250, y: 340, width: 300, height: 50 })) {
             startShootingMinigame();
         }
-    } else if (activeUI === 'minigameSelection') {
-        // Card-Flipping Game Button
-        if (isColliding(mousePos, { x: 250, y: 200, width: 300, height: 50 })) {
-            startCardMinigame();
-        }
-        // Rhythm Game Button
-        if (isColliding(mousePos, { x: 250, y: 270, width: 300, height: 50 })) {
-            startRhythmMinigame();
-        }
-        // Shooting Gallery Button
-        if (isColliding(mousePos, { x: 250, y: 340, width: 300, height: 50 })) {
-            startShootingMinigame();
-        }
     } else if (activeUI === 'gacha') { // Gacha draw button interaction
         const drawButton = { x: STAGE_WIDTH / 2 - 100, y: 300, width: 200, height: 50 };
         if (isColliding(mousePos, drawButton)) {
             performGachaDraw();
         }
     } else if (gameState === 'minigame_card') {
+        minigameState.cards.forEach(card => {
+            if (!card.isFlipped && !card.isMatched && isColliding(mousePos, card)) {
+                card.isFlipped = true;
+                minigameState.flippedCards.push(card);
+
+                if (minigameState.flippedCards.length === 2) {
+                    const [firstCard, secondCard] = minigameState.flippedCards;
+                    if (firstCard.type === secondCard.type) {
+                        firstCard.isMatched = true;
+                        secondCard.isMatched = true;
+                        minigameState.matches++;
+                        minigameState.flippedCards = [];
+                    } else {
+                        setTimeout(() => {
+                            firstCard.isFlipped = false;
+                            secondCard.isFlipped = false;
+                            minigameState.flippedCards = [];
+                        }, 1000);
+                    }
+                }
+            }
+        });
+    } else if (gameState === 'minigame_shooting') {
         for (let i = minigameState.targets.length - 1; i >= 0; i--) {
             const target = minigameState.targets[i];
             if (isColliding(mousePos, target)) {
                 minigameState.score++;
                 minigameState.targets.splice(i, 1);
-                break;
+                break; // 한 번의 클릭으로 하나의 타겟만 제거
             }
         }
     }
@@ -2257,6 +2277,11 @@ function checkStageCollisions() {
                 if (boss.hp <= 0) {
                     player.coins += 1000;
                     playSound('coin');
+
+                    if (stage === 13) {
+                        nextStage();
+                        return;
+                    }
                     
                     if (stage === 8) {
                         nextStage();
@@ -2563,6 +2588,27 @@ function drawStage11Background() {
     ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
 }
 
+function drawColosseumBackground() {
+    // Sandy ground
+    ctx.fillStyle = '#f4a460'; // Sandy brown
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+
+    // Colosseum walls
+    ctx.fillStyle = '#d2b48c'; // Tan
+    ctx.fillRect(0, 0, 30, STAGE_HEIGHT);
+    ctx.fillRect(STAGE_WIDTH - 30, 0, 30, STAGE_HEIGHT);
+
+    // Spectator stands
+    ctx.fillStyle = '#8b4513'; // Saddle brown
+    for (let i = 0; i < 10; i++) {
+        ctx.fillRect(0, i * 60, STAGE_WIDTH, 30);
+    }
+
+    // Ground
+    ctx.fillStyle = '#deb887'; // Burlywood
+    ctx.fillRect(0, STAGE_HEIGHT - GROUND_HEIGHT, STAGE_WIDTH, GROUND_HEIGHT);
+}
+
 
 // --- UI 그리기 ---
 function drawStageUI() {
@@ -2570,7 +2616,11 @@ function drawStageUI() {
     ctx.font = '20px Arial';
     ctx.fillText(`HP: ${player.hp}/${player.maxHp}`, 20, 30);
     ctx.fillText(`코인: ${player.coins}`, 20, 60);
-    ctx.fillText(`스테이지: ${stage}`, 20, 90);
+    if (stage === 13) {
+        ctx.fillText(`스테이지: 콜로세움`, 20, 90);
+    } else {
+        ctx.fillText(`스테이지: ${stage}`, 20, 90);
+    }
     ctx.fillText(`포션: ${player.inventory.potions} (P 키)`, 20, 120);
 
     // 필살기 게이지
@@ -2621,6 +2671,9 @@ function updateVillageLogic() {
         } else if (isColliding(player, npcs.gachaMachine)) { // New gacha interaction
             activeUI = 'gacha';
             gachaResult = ''; // Clear previous gacha result
+        } else if (isColliding(player, npcs.colosseumMaster)) {
+            stage = 13; // Set stage to Colosseum
+            goToStage();
         }
         keys.e = false;
     }
@@ -3759,6 +3812,107 @@ function createDoctorBoss() {
     };
 }
 
+function createCorruptedGolemBoss() {
+    boss = {
+        x: STAGE_WIDTH / 2 - 100, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 200, height: 200,
+        hp: 8000, maxHp: 8000,
+        attackCooldown: 180,
+        pattern: 0,
+        state: 'idle', // idle, slam, rock_throw, split
+        stateTimer: 0,
+        splitCount: 0,
+
+        draw() {
+            const bodyColor = this.splitCount === 0 ? '#6B4226' : (this.splitCount === 1 ? '#805D3F' : '#A98D70');
+            ctx.fillStyle = bodyColor;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+
+            // Glowing eyes
+            ctx.fillStyle = '#FF0000';
+            ctx.beginPath();
+            ctx.arc(this.x + this.width * 0.3, this.y + this.height * 0.3, 10, 0, Math.PI * 2);
+            ctx.arc(this.x + this.width * 0.7, this.y + this.height * 0.3, 10, 0, Math.PI * 2);
+            ctx.fill();
+        },
+
+        update() {
+            this.attackCooldown--;
+            if (this.attackCooldown <= 0 && this.state === 'idle') {
+                this.state = 'acting';
+                this.pattern = Math.floor(Math.random() * 2);
+                this.attackCooldown = 120;
+
+                switch (this.pattern) {
+                    case 0: // Slam
+                        this.stateTimer = 60;
+                        break;
+                    case 1: // Rock Throw
+                        this.stateTimer = 120;
+                        break;
+                }
+            }
+
+            if (this.state === 'acting') {
+                this.stateTimer--;
+
+                switch (this.pattern) {
+                    case 0: // Slam
+                        if (this.stateTimer % 20 === 0) {
+                            // Create a shockwave
+                            particles.push({
+                                x: this.x + this.width / 2, y: STAGE_HEIGHT - GROUND_HEIGHT,
+                                dx: 10, dy: 0, radius: 10, color: '#8B4513', life: 20, startLife: 20, isShockwave: true
+                            });
+                            particles.push({
+                                x: this.x + this.width / 2, y: STAGE_HEIGHT - GROUND_HEIGHT,
+                                dx: -10, dy: 0, radius: 10, color: '#8B4513', life: 20, startLife: 20, isShockwave: true
+                            });
+                        }
+                        break;
+                    case 1: // Rock Throw
+                        if (this.stateTimer % 40 === 0) {
+                            this.throwRock();
+                        }
+                        break;
+                }
+
+                if (this.stateTimer <= 0) {
+                    this.state = 'idle';
+                }
+            }
+
+            if (this.hp <= this.maxHp / 2 && this.splitCount === 0) {
+                this.split();
+            }
+        },
+
+        throwRock() {
+            const angleToPlayer = Math.atan2(player.y - this.y, player.x - this.x);
+            bossProjectiles.push({
+                x: this.x + this.width / 2, y: this.y + this.height / 2,
+                width: 30, height: 30, speed: 7, angle: angleToPlayer, type: 'rock',
+                draw() { ctx.fillStyle = '#A9A9A9'; ctx.fillRect(this.x, this.y, this.width, this.height); },
+                update() {
+                    this.x += Math.cos(this.angle) * this.speed;
+                    this.y += Math.sin(this.angle) * this.speed;
+                }
+            });
+        },
+
+        split() {
+            this.splitCount++;
+            this.hp = this.maxHp / (2 * this.splitCount);
+            this.width /= 2;
+            this.height /= 2;
+
+            // Create a new golem
+            const newGolem = { ...this };
+            newGolem.x = this.x + this.width * 2;
+            enemies.push(newGolem);
+        }
+    };
+}
+
 
 
     function gameOver() {
@@ -3791,6 +3945,21 @@ function createDoctorBoss() {
     }
 
 function nextStage() {
+    if (stage === 13) { // Colosseum boss rush logic
+        currentBossIndex++;
+        if (currentBossIndex < stage7BossRush.length) {
+            boss = null;
+            isSpawningNextBoss = true;
+            setTimeout(() => {
+                stage7BossRush[currentBossIndex]();
+                isSpawningNextBoss = false;
+            }, 2000);
+        } else {
+            gameState = 'ending';
+        }
+        return;
+    }
+
     stage++;
     if (stage > stages.length) {
         gameState = 'ending';
@@ -3841,7 +4010,7 @@ function goToMenu() {
 function goToStage() {
     gameState = 'stage';
     resetStage();
-    if (stage === 7 || stage === 10 || stage === 11) {
+    if (stage === 7 || stage === 10 || stage === 11 || stage === 13) {
         isBossFight = true;
         stages[stage - 1].createBoss();
     }
