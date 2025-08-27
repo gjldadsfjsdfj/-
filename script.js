@@ -2677,7 +2677,7 @@ function updateVillageLogic() {
             activeUI = 'gacha';
             gachaResult = ''; // Clear previous gacha result
         } else if (isColliding(player, npcs.colosseumMaster)) {
-            stage = 13; // Set stage to Colosseum
+            stage = 13;
             goToStage();
         }
         keys.e = false;
@@ -3994,7 +3994,7 @@ function nextStage() {
                 isSpawningNextBoss = false;
             }, 2000);
         } else {
-            gameState = 'ending';
+            goToVillage(); // Go back to the village instead of ending the game
         }
         return;
     }
@@ -4049,7 +4049,7 @@ function goToMenu() {
 function goToStage() {
     gameState = 'stage';
     resetStage();
-    if (stage === 7 || stage === 10 || stage === 11 || stage === 13) {
+    if (stage === 7 || stage === 10 || stage === 11) {
         isBossFight = true;
         stages[stage - 1].createBoss();
     }
