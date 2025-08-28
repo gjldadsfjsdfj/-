@@ -316,6 +316,7 @@ const ultimates = {
     teleport: { name: '순간 이동', description: '바라보는 방향으로 빠르게 순간이동합니다.', price: 1000, purchased: false, type: 'ultimate' },
     auto_revive: { name: '자동 부활', description: '사망 시 자동으로 부활합니다. (1회용)', price: 0, purchased: false, type: 'ultimate' },
     sports_car: { name: '스포츠카 변신', description: '10초간 스포츠카로 변신하여 매우 빠르게 이동합니다.', price: 0, purchased: false, type: 'ultimate' },
+    robot_transform: { name: '로봇 변신', description: '10초간 모든 능력치가 최대로 상승합니다.', price: 1500, purchased: false, type: 'ultimate' },
 };
 
 const shopConsumables = {
@@ -512,6 +513,36 @@ function loadPlayerStats() {
         }
         ctx.globalAlpha = 1.0;
         ctx.shadowBlur = 0;
+
+        // Draw robot form if transformed
+        if (this.isTransformed && this.transformedType === 'robot') {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+
+            // Body
+            ctx.fillStyle = '#C0C0C0'; // Silver
+            ctx.fillRect(0, 0, this.width, this.height);
+
+            // Head
+            ctx.fillStyle = '#808080'; // Gray
+            ctx.fillRect(this.width / 4, -20, this.width / 2, 20);
+
+            // Eyes
+            ctx.fillStyle = '#00FFFF'; // Cyan
+            ctx.fillRect(this.width / 4 + 5, -15, 10, 10);
+            ctx.fillRect(this.width / 2 + 5, -15, 10, 10);
+
+            // Joints
+            ctx.fillStyle = '#404040'; // Dark Gray
+            ctx.beginPath();
+            ctx.arc(0, this.height / 2, 10, 0, Math.PI * 2);
+            ctx.arc(this.width, this.height / 2, 10, 0, Math.PI * 2);
+            ctx.arc(this.width / 4, this.height, 10, 0, Math.PI * 2);
+            ctx.arc(this.width * 3 / 4, this.height, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
     },
 
     update() {
@@ -543,6 +574,22 @@ function loadPlayerStats() {
                     this.speed = this.originalSpeed; // Revert speed
                     this.width = this.originalWidth; // Revert size
                     this.height = this.originalHeight;
+                    this.isInvincible = false; // No longer invincible
+                }
+            } else if (isUltimateActive && this.equippedUltimate === 'robot_transform') {
+                ultimateTimer -= 1 / 60;
+                if (ultimateTimer <= 0) {
+                    isUltimateActive = false;
+                    ultimateGauge = 0;
+                    this.isTransformed = false;
+                    this.transformedType = null;
+                    // Revert stats
+                    this.speed = this.originalSpeed;
+                    this.baseAttackDamage = this.originalBaseAttackDamage;
+                    this.maxHp = this.originalMaxHp;
+                    this.hp = Math.min(this.hp, this.maxHp); // Adjust current HP if it exceeds new max
+                    this.jumpPower = this.originalJumpPower;
+                    this.dashSpeed = this.originalDashSpeed;
                     this.isInvincible = false; // No longer invincible
                 }
             }
@@ -1762,6 +1809,26 @@ function handleKeyDown(e) {
                 player.invincibleTimer = 20 * 60; // Invincible for duration
                 // Disable normal player actions
                 keys.left = false; keys.right = false; keys.down = false; keys.b = false;
+            } else if (player.equippedUltimate === 'robot_transform') {
+                ultimateTimer = ULTIMATE_DURATION; // Use ULTIMATE_DURATION (10 seconds)
+                player.isTransformed = true;
+                player.transformedType = 'robot';
+                // Store original stats to revert later
+                player.originalSpeed = player.speed;
+                player.originalBaseAttackDamage = player.baseAttackDamage;
+                player.originalMaxHp = player.maxHp;
+                player.originalJumpPower = player.jumpPower;
+                player.originalDashSpeed = player.dashSpeed;
+
+                // Boost stats to maximum (example values)
+                player.speed = 10; // Faster
+                player.baseAttackDamage = 50; // High damage
+                player.maxHp = 10; // High HP
+                player.hp = player.maxHp; // Heal to full
+                player.jumpPower = -25; // Higher jump
+                player.dashSpeed = 30; // Faster dash
+                player.isInvincible = true; // Invincible during robot form
+                player.invincibleTimer = ULTIMATE_DURATION * 60; // Invincible for duration
             }
         }
     }
@@ -4455,27 +4522,42 @@ function performGachaDraw() {
     savePlayerStats(); // Save after gacha cost
 
     const rand = Math.random();
-    if (rand < 0.10) { // 10% chance for auto_revive
-        if (!ultimates.auto_revive.purchased) { // Only give if not already owned
+    // 0.1% chance for robot_transform
+    if (rand < 0.001) {
+        if (!ultimates.robot_transform.purchased) {
+            ultimates.robot_transform.purchased = true;
+            gachaResult = '축하합니다! 로봇 변신 필살기를 획득했습니다!';
+            savePlayerStats();
+        } else {
+            gachaResult = '이미 로봇 변신 필살기를 보유하고 있습니다! 1000 코인을 획득했습니다.'; // Higher coin reward for rare duplicate
+            player.coins += 1000;
+            savePlayerStats();
+        }
+    }
+    // Remaining 99.9%
+    else if (rand < 0.001 + 0.099) { // 0.1% to 0.1% + 9.9% = 0.1% to 0.199
+        // auto_revive (now 9.9% chance)
+        if (!ultimates.auto_revive.purchased) {
             ultimates.auto_revive.purchased = true;
-            savePlayerStats(); // Save after purchasing new ultimate
             gachaResult = '축하합니다! 자동 부활 필살기를 획득했습니다!';
-        } else { // If already owned, give coins instead
+            savePlayerStats();
+        } else {
             gachaResult = '이미 자동 부활 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
             player.coins += 500;
-            savePlayerStats(); // Save after gaining coins from duplicate ultimate
+            savePlayerStats();
         }
-    } else if (rand < 0.20) { // 10% chance for sports_car
+    } else if (rand < 0.001 + 0.099 + 0.10) { // 0.199 to 0.199 + 0.10 = 0.199 to 0.299
+        // sports_car (now 10% chance)
         if (!ultimates.sports_car.purchased) {
             ultimates.sports_car.purchased = true;
-            savePlayerStats(); // Save after purchasing new ultimate
             gachaResult = '축하합니다! 스포츠카 변신 필살기를 획득했습니다!';
+            savePlayerStats();
         } else {
             gachaResult = '이미 스포츠카 변신 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
             player.coins += 500;
-            savePlayerStats(); // Save after gaining coins from duplicate ultimate
+            savePlayerStats();
         }
-    } else { // 80% chance for coins
+    } else { // Remaining 80% for coins (0.299 to 1.00)
         let coinAmount;
         const coinRand = Math.random();
         if (coinRand < 0.4) { // 40% for 1-20 coins
