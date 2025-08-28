@@ -147,6 +147,7 @@ let gameOverAnimationState = {};
 let isGeminiModeUsed = false;
 let isGeminiModeActive = false; // Added this line
 let gachaResult = ''; // Global variable for gacha result
+let newGamePlusLevel = 0; // New Game+ level
 
 // --- 리소스 관리 ---
 const lasers = [];
@@ -324,6 +325,49 @@ const shopConsumables = {
 };
 
 
+function savePlayerStats() {
+    const statsToSave = {
+        newGamePlusLevel: newGamePlusLevel,
+        coins: player.coins,
+        hp: player.hp,
+        maxHp: player.maxHp,
+        attackLevel: player.attackLevel,
+        defenseLevel: player.defenseLevel,
+        inventory: player.inventory,
+        equippedUltimate: player.equippedUltimate,
+        ultimatesPurchased: {}, // Save purchased status of ultimates
+        pet: player.pet ? { type: player.pet.type } : null, // Save pet type
+    };
+    // Save purchased status for each ultimate
+    for (const ultId in ultimates) {
+        statsToSave.ultimatesPurchased[ultId] = ultimates[ultId].purchased;
+    }
+    localStorage.setItem('playerStats', JSON.stringify(statsToSave));
+}
+
+function loadPlayerStats() {
+    const savedStats = JSON.parse(localStorage.getItem('playerStats'));
+    if (savedStats) {
+        newGamePlusLevel = savedStats.newGamePlusLevel || 0;
+        player.coins = savedStats.coins;
+        player.hp = savedStats.hp;
+        player.maxHp = savedStats.maxHp;
+        player.attackLevel = savedStats.attackLevel;
+        player.defenseLevel = savedStats.defenseLevel;
+        player.inventory = savedStats.inventory;
+        player.equippedUltimate = savedStats.equippedUltimate;
+        // Load purchased status for each ultimate
+        for (const ultId in savedStats.ultimatesPurchased) {
+            if (ultimates[ultId]) {
+                ultimates[ultId].purchased = savedStats.ultimatesPurchased[ultId];
+            }
+        }
+        if (savedStats.pet && savedStats.pet.type) {
+            player.pet = createPet(savedStats.pet.type);
+        }
+    }
+}
+
 // --- 플레이어(토드) 설정 ---
 const player = {
     x: 100,
@@ -370,48 +414,6 @@ const player = {
     originalSpeed: 0,
     originalWidth: 0,
     originalHeight: 0,
-};
-
-function savePlayerStats() {
-    const statsToSave = {
-        coins: player.coins,
-        hp: player.hp,
-        maxHp: player.maxHp,
-        attackLevel: player.attackLevel,
-        defenseLevel: player.defenseLevel,
-        inventory: player.inventory,
-        equippedUltimate: player.equippedUltimate,
-        ultimatesPurchased: {}, // Save purchased status of ultimates
-        pet: player.pet ? { type: player.pet.type } : null, // Save pet type
-    };
-    // Save purchased status for each ultimate
-    for (const ultId in ultimates) {
-        statsToSave.ultimatesPurchased[ultId] = ultimates[ultId].purchased;
-    }
-    localStorage.setItem('playerStats', JSON.stringify(statsToSave));
-}
-
-function loadPlayerStats() {
-    const savedStats = JSON.parse(localStorage.getItem('playerStats'));
-    if (savedStats) {
-        player.coins = savedStats.coins;
-        player.hp = savedStats.hp;
-        player.maxHp = savedStats.maxHp;
-        player.attackLevel = savedStats.attackLevel;
-        player.defenseLevel = savedStats.defenseLevel;
-        player.inventory = savedStats.inventory;
-        player.equippedUltimate = savedStats.equippedUltimate;
-        // Load purchased status for each ultimate
-        for (const ultId in savedStats.ultimatesPurchased) {
-            if (ultimates[ultId]) {
-                ultimates[ultId].purchased = savedStats.ultimatesPurchased[ultId];
-            }
-        }
-        if (savedStats.pet && savedStats.pet.type) {
-            player.pet = createPet(savedStats.pet.type);
-        }
-    }
-}
 
     draw() {
         const bodyY = this.y + this.headRadius * 2;
@@ -884,7 +886,7 @@ function createEnemy() {
         width: enemyType.size,
         height: enemyType.size,
         speed: enemyType.speed * (1 + (stage - 1) * 0.1) * (fromLeft ? -1 : 1),
-        hp: enemyType.hp,
+        hp: enemyType.hp * (1 + newGamePlusLevel * 0.5),
         draw: enemyType.draw,
         update(speedMultiplier = 1) {
             this.x -= this.speed * speedMultiplier;
@@ -916,7 +918,7 @@ function createBoss() {
 function createStage1Boss() { 
     boss = {
         x: STAGE_WIDTH - 200, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
-        hp: 1000 * (1 + (stage - 1) * 0.2), maxHp: 1000 * (1 + (stage - 1) * 0.2),
+        hp: 1000 * (1 + (stage - 1) * 0.2) * (1 + newGamePlusLevel * 0.5), maxHp: 1000 * (1 + (stage - 1) * 0.2) * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 0, pattern: 0,
         draw() {
             const centerX = this.x + this.width / 2, centerY = this.y + this.height / 2;
@@ -952,7 +954,7 @@ function createStage1Boss() {
 function createStage2Boss() { 
     boss = {
         x: STAGE_WIDTH - 200, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 100, height: 200,
-        hp: 1200 * (1 + (stage - 1) * 0.2), maxHp: 1200 * (1 + (stage - 1) * 0.2),
+        hp: 1200 * (1 + (stage - 1) * 0.2) * (1 + newGamePlusLevel * 0.5), maxHp: 1200 * (1 + (stage - 1) * 0.2) * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 120,
         state: 'idle', // idle, slamming, shooting, leaving
         stateTimer: 0,
@@ -1041,7 +1043,7 @@ function createStage2Boss() {
 function createStage3Boss() {
     boss = {
         x: STAGE_WIDTH - 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
-        hp: 1500, maxHp: 1500,
+        hp: 1500 * (1 + newGamePlusLevel * 0.5), maxHp: 1500 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 120, pattern: 0, state: 'idle', stateTimer: 0,
         dx: 0,
         draw() {
@@ -1124,8 +1126,8 @@ function createStage3Boss() {
 function createStage5Boss() { 
     boss = {
         x: STAGE_WIDTH - 200, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
-        hp: 2000, 
-        maxHp: 2000,
+        hp: 2000 * (1 + newGamePlusLevel * 0.5), 
+        maxHp: 2000 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 0, pattern: 0,
         draw() { 
             const centerX = this.x + this.width / 2, centerY = this.y + this.height / 2;
@@ -1165,7 +1167,7 @@ function createStage5Boss() {
 function createStage6Boss() {
     boss = {
         x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 150, height: 80,
-        hp: 2000, maxHp: 2000,
+        hp: 2000 * (1 + newGamePlusLevel * 0.5), maxHp: 2000 * (1 + newGamePlusLevel * 0.5),
         state: 'idle', // idle, ascending, bombing
         stateTimer: 300, // 5초 대기 (60fps * 5)
         targetY: 100,
@@ -1248,7 +1250,7 @@ function createStage6Boss() {
 function createStage7Boss() {
     boss = {
         x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
-        hp: 4000, maxHp: 4000,
+        hp: 4000 * (1 + newGamePlusLevel * 0.5), maxHp: 4000 * (1 + newGamePlusLevel * 0.5),
         state: 'phase1', // phase1, frenzy, idle
         stateTimer: 0,
         attackCooldown: 120,
@@ -1851,9 +1853,13 @@ function handleMouseClick(e) {
 
     if (gameState === 'ending') {
         endingPage++;
-        // There are 5 ending texts (0-4). After the last one, reload.
+        // There are 5 ending texts (0-4). After the last one, ask for New Game+.
         if (endingPage >= 5) {
-            document.location.reload();
+            if (confirm(`하드 모드(${newGamePlusLevel + 1}회차)를 시작하시겠습니까?`)) {
+                startNewGamePlus();
+            } else {
+                document.location.reload();
+            }
         }
         return;
     }
@@ -2045,6 +2051,11 @@ function draw() {
     else if (activeUI === 'minigameSelection') drawMinigameSelectionUI();
     else if (activeUI === 'gacha') drawGachaUI(); // New condition for gacha UI
     else if (activeUI === 'blacksmith') drawBlacksmithUI(); // New: Draw Blacksmith UI
+
+    if (newGamePlusLevel > 0) {
+        ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.5, 0.05 * newGamePlusLevel)})`;
+        ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    }
 }
 
 // --- 스토리 로직 ---
@@ -2848,7 +2859,7 @@ function drawStaticBackground() {
 function createStaticBoss() {
     boss = {
         x: STAGE_WIDTH / 2 - 50, y: STAGE_HEIGHT / 2 - 50, width: 100, height: 100,
-        hp: 6000, maxHp: 6000,
+        hp: 6000 * (1 + newGamePlusLevel * 0.5), maxHp: 6000 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 120,
         pattern: 0,
         state: 'idle', // idle, screech, field, clones
@@ -3709,7 +3720,7 @@ function createSharkBoss() {
     // This is for stage 8, the diamond world
     boss = {
         x: -100, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 120, height: 60,
-        hp: 100, maxHp: 100,
+        hp: 100 * (1 + newGamePlusLevel * 0.5), maxHp: 100 * (1 + newGamePlusLevel * 0.5),
         speed: 8,
         draw() {
             ctx.fillStyle = '#95a5a6';
@@ -3741,7 +3752,7 @@ function createGhostBoss() {
     // This is for stage 9
     boss = {
         x: STAGE_WIDTH / 2 - 50, y: 100, width: 100, height: 150,
-        hp: 3000, maxHp: 3000,
+        hp: 3000 * (1 + newGamePlusLevel * 0.5), maxHp: 3000 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 90,
         draw() {
             ctx.globalAlpha = 0.8;
@@ -3795,7 +3806,7 @@ function createGhostBoss() {
 function createRodyBoss() {
     boss = {
         x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 150, height: 200,
-        hp: 3500, maxHp: 3500,
+        hp: 3500 * (1 + newGamePlusLevel * 0.5), maxHp: 3500 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 120,
         pattern: 0,
         state: 'idle', // idle, dashing, shooting_punch, shooting_laser, pulling
@@ -3944,7 +3955,7 @@ function createRodyBoss() {
 function createStage11Boss() {
     boss = {
         x: STAGE_WIDTH / 2 - 75, y: 150, width: 150, height: 150,
-        hp: 4000, maxHp: 4000,
+        hp: 4000 * (1 + newGamePlusLevel * 0.5), maxHp: 4000 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 120,
         pattern: 0,
         state: 'idle', // idle, laser_barrage, summon_strike, flamethrower
@@ -4073,7 +4084,7 @@ function createStage11Boss() {
 function createDoctorBoss() {
     boss = {
         x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - GROUND_HEIGHT - 150, width: 150, height: 150,
-        hp: 5000, maxHp: 5000,
+        hp: 5000 * (1 + newGamePlusLevel * 0.5), maxHp: 5000 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 180,
         pattern: -1,
         state: 'idle', // idle, summon_enemies, roll_bombs, rain_projectiles
@@ -4234,7 +4245,7 @@ function createDoctorBoss() {
 function createCorruptedGolemBoss() {
     boss = {
         x: STAGE_WIDTH / 2 - 100, y: STAGE_HEIGHT - GROUND_HEIGHT - 200, width: 200, height: 200,
-        hp: 8000, maxHp: 8000,
+        hp: 8000 * (1 + newGamePlusLevel * 0.5), maxHp: 8000 * (1 + newGamePlusLevel * 0.5),
         attackCooldown: 180,
         pattern: 0,
         state: 'idle', // idle, slam, rock_throw, split
@@ -4510,6 +4521,21 @@ function nextSurvivalWave() {
     }
 }
 
+function startNewGamePlus() {
+    newGamePlusLevel++;
+    stage = 1;
+    storyPage = 0;
+    endingPage = 0;
+    if (quest) {
+        quest.isActive = false;
+        quest.isComplete = false;
+    }
+    
+    savePlayerStats(); 
+    
+    goToStage();
+}
+
 function performGachaDraw() {
     const gachaCost = 100; // Example cost
     if (player.coins < gachaCost) {
@@ -4522,8 +4548,8 @@ function performGachaDraw() {
     savePlayerStats(); // Save after gacha cost
 
     const rand = Math.random();
-    // 0.1% chance for robot_transform
-    if (rand < 0.001) {
+    // 25% chance for robot_transform
+    if (rand < 0.25) {
         if (!ultimates.robot_transform.purchased) {
             ultimates.robot_transform.purchased = true;
             gachaResult = '축하합니다! 로봇 변신 필살기를 획득했습니다!';
@@ -4534,9 +4560,8 @@ function performGachaDraw() {
             savePlayerStats();
         }
     }
-    // Remaining 99.9%
-    else if (rand < 0.001 + 0.099) { // 0.1% to 0.1% + 9.9% = 0.1% to 0.199
-        // auto_revive (now 9.9% chance)
+    // 10% chance for auto_revive
+    else if (rand < 0.35) {
         if (!ultimates.auto_revive.purchased) {
             ultimates.auto_revive.purchased = true;
             gachaResult = '축하합니다! 자동 부활 필살기를 획득했습니다!';
@@ -4546,8 +4571,9 @@ function performGachaDraw() {
             player.coins += 500;
             savePlayerStats();
         }
-    } else if (rand < 0.001 + 0.099 + 0.10) { // 0.199 to 0.199 + 0.10 = 0.199 to 0.299
-        // sports_car (now 10% chance)
+    } 
+    // 15% chance for sports_car
+    else if (rand < 0.50) {
         if (!ultimates.sports_car.purchased) {
             ultimates.sports_car.purchased = true;
             gachaResult = '축하합니다! 스포츠카 변신 필살기를 획득했습니다!';
@@ -4557,7 +4583,7 @@ function performGachaDraw() {
             player.coins += 500;
             savePlayerStats();
         }
-    } else { // Remaining 80% for coins (0.299 to 1.00)
+    } else { // Remaining 50% for coins
         let coinAmount;
         const coinRand = Math.random();
         if (coinRand < 0.4) { // 40% for 1-20 coins
