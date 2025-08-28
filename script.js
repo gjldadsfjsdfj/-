@@ -345,6 +345,10 @@ const player = {
     direction: 'right',
     hp: 3,
     maxHp: 3,
+    attackLevel: 0, // New: Player's attack upgrade level
+    defenseLevel: 0, // New: Player's defense upgrade level
+    baseAttackDamage: 10, // New: Base damage for player's attacks
+    defenseBonus: 0, // New: Damage reduction from defense upgrades
     coins: 0, // 초기 코인
     isInvincible: false,
     invincibleTimer: 0,
@@ -365,6 +369,48 @@ const player = {
     originalSpeed: 0,
     originalWidth: 0,
     originalHeight: 0,
+};
+
+function savePlayerStats() {
+    const statsToSave = {
+        coins: player.coins,
+        hp: player.hp,
+        maxHp: player.maxHp,
+        attackLevel: player.attackLevel,
+        defenseLevel: player.defenseLevel,
+        inventory: player.inventory,
+        equippedUltimate: player.equippedUltimate,
+        ultimatesPurchased: {}, // Save purchased status of ultimates
+        pet: player.pet ? { type: player.pet.type } : null, // Save pet type
+    };
+    // Save purchased status for each ultimate
+    for (const ultId in ultimates) {
+        statsToSave.ultimatesPurchased[ultId] = ultimates[ultId].purchased;
+    }
+    localStorage.setItem('playerStats', JSON.stringify(statsToSave));
+}
+
+function loadPlayerStats() {
+    const savedStats = JSON.parse(localStorage.getItem('playerStats'));
+    if (savedStats) {
+        player.coins = savedStats.coins;
+        player.hp = savedStats.hp;
+        player.maxHp = savedStats.maxHp;
+        player.attackLevel = savedStats.attackLevel;
+        player.defenseLevel = savedStats.defenseLevel;
+        player.inventory = savedStats.inventory;
+        player.equippedUltimate = savedStats.equippedUltimate;
+        // Load purchased status for each ultimate
+        for (const ultId in savedStats.ultimatesPurchased) {
+            if (ultimates[ultId]) {
+                ultimates[ultId].purchased = savedStats.ultimatesPurchased[ultId];
+            }
+        }
+        if (savedStats.pet && savedStats.pet.type) {
+            player.pet = createPet(savedStats.pet.type);
+        }
+    }
+}
 
     draw() {
         const bodyY = this.y + this.headRadius * 2;
@@ -660,6 +706,7 @@ const player = {
         if (this.inventory.potions > 0 && this.hp < this.maxHp) {
             this.inventory.potions--;
             this.hp = Math.min(this.maxHp, this.hp + 1);
+            savePlayerStats(); // Save after using potion
             alert('체력을 1 회복했습니다.');
         }
     },
@@ -1462,6 +1509,7 @@ function updateGameOverAnimation() {
                 isSpawningNextBoss = false;
                 // gameState is set to 'village' by goToVillage()
                 storyPage = 0; // Reset story page
+                savePlayerStats(); // Save current state after game over reset
             }
         }
     }
@@ -1544,6 +1592,7 @@ function createDashParticle(x, y) {
 
 const npcs = {
     villageChief: { x: 150, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'green' },
+    blacksmith: { x: 200, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: '#604020', dialogue: "무엇을 강화해 드릴까요? (E)" }, // New Blacksmith NPC
     merchant: { x: 600, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'blue', dialogue: "서바이벌 모드를 시작하시겠습니까? (E)" }, // Changed back to blue
     gachaMachine: { x: 700, y: STAGE_HEIGHT - GROUND_HEIGHT - 80, width: 50, height: 80, color: 'gold', dialogue: "뽑기를 하시겠습니까? (E)" },
     radio: { x: 400, y: STAGE_HEIGHT - GROUND_HEIGHT - 60, width: 40, height: 40, color: 'red', dialogue: "라디오에서 이상한 잡음이 들린다..." },
@@ -1866,6 +1915,15 @@ function handleMouseClick(e) {
                 break; // 한 번의 클릭으로 하나의 타겟만 제거
             }
         }
+    } else if (activeUI === 'blacksmith') { // New: Handle clicks in Blacksmith UI
+        const attackButton = { x: 250, y: 200, width: 300, height: 50 };
+        const defenseButton = { x: 250, y: 270, width: 300, height: 50 };
+
+        if (isColliding(mousePos, attackButton)) {
+            performBlacksmithUpgrade('attack');
+        } else if (isColliding(mousePos, defenseButton)) {
+            performBlacksmithUpgrade('defense');
+        }
     }
 }
 canvas.addEventListener('click', handleMouseClick);
@@ -1893,6 +1951,8 @@ function updateLogic() {
     else if (gameState === 'minigame_card') updateCardMinigame();
     else if (gameState === 'minigame_shooting') updateShootingMinigame();
     else if (gameState === 'minigame_rhythm') updateRhythmMinigame();
+
+    if (activeUI === 'blacksmith') updateBlacksmithUI(); // New: Update Blacksmith UI logic
 }
 
 function draw() {
@@ -1917,6 +1977,7 @@ function draw() {
     else if (activeUI === 'petShop') drawPetShopUI();
     else if (activeUI === 'minigameSelection') drawMinigameSelectionUI();
     else if (activeUI === 'gacha') drawGachaUI(); // New condition for gacha UI
+    else if (activeUI === 'blacksmith') drawBlacksmithUI(); // New: Draw Blacksmith UI
 }
 
 // --- 스토리 로직 ---
@@ -2296,7 +2357,7 @@ function checkStageCollisions() {
         const laser = lasers[i];
         for (let j = enemies.length - 1; j >= 0; j--) {
             if (isColliding(laser, enemies[j])) {
-                enemies[j].hp--;
+                enemies[j].hp -= (player.baseAttackDamage + (player.attackLevel * 5));
                 if (enemies[j].hp <= 0) {
                     if (isUltimateActive && player.equippedUltimate === 'vampiric_aura') {
                         player.hp = Math.min(player.maxHp, player.hp + 1);
@@ -2306,6 +2367,8 @@ function checkStageCollisions() {
                     
                     const coinReward = enemies[j].type.startsWith('elite_') ? 50 : 10; // Higher reward for elites
                     player.coins += coinReward;
+
+                    savePlayerStats(); // Save after gaining coins
 
                     enemies.splice(j, 1);
                     ultimateGauge = Math.min(100, ultimateGauge + 10);
@@ -2340,6 +2403,7 @@ function checkStageCollisions() {
                 lasers.splice(i, 1);
                 if (boss.hp <= 0) {
                     player.coins += 1000;
+                    savePlayerStats(); // Save after gaining coins
                     playSound('coin');
 
                     if (stage === 14) { // The Static defeated
@@ -2914,6 +2978,8 @@ function updateVillageLogic() {
             activeUI = 'merchant_choice';
         } else if (isColliding(player, npcs.petSeller)) {
             activeUI = 'petShop';
+        } else if (isColliding(player, npcs.blacksmith)) { // New Blacksmith interaction
+            activeUI = 'blacksmith';
         } else if (isColliding(player, npcs.minigameHost)) {
             activeUI = 'minigameSelection';
         } else if (isColliding(player, npcs.gachaMachine)) {
@@ -3278,6 +3344,45 @@ function drawMinigameSelectionUI() {
     // Shooting Gallery Button
     ctx.strokeRect(250, 340, 300, 50);
     ctx.fillText('사격 갤러리', STAGE_WIDTH / 2, 370);
+}
+
+function drawBlacksmithUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('대장간', STAGE_WIDTH / 2, 80);
+    ctx.font = '16px Arial';
+    ctx.fillText('강화할 항목을 선택하세요. (E를 눌러 닫기)', STAGE_WIDTH / 2, 120);
+    ctx.fillText(`내 코인: ${player.coins}`, STAGE_WIDTH / 2, 150);
+
+    ctx.textAlign = 'left';
+    let itemY = 200;
+
+    // Attack Upgrade
+    const attackCost = (player.attackLevel + 1) * 100;
+    ctx.strokeRect(250, itemY, 300, 50);
+    ctx.font = '20px Arial';
+    ctx.fillText(`공격력 강화 Lv.${player.attackLevel} -> Lv.${player.attackLevel + 1}`, 260, itemY + 20);
+    ctx.font = '16px Arial';
+    ctx.fillText(`비용: ${attackCost} 코인`, 260, itemY + 40);
+    itemY += 70;
+
+    // Defense Upgrade
+    const defenseCost = (player.defenseLevel + 1) * 100;
+    ctx.strokeRect(250, itemY, 300, 50);
+    ctx.font = '20px Arial';
+    ctx.fillText(`방어력 강화 Lv.${player.defenseLevel} -> Lv.${player.defenseLevel + 1}`, 260, itemY + 20);
+    ctx.font = '16px Arial';
+    ctx.fillText(`비용: ${defenseCost} 코인`, 260, itemY + 40);
+    itemY += 70;
+
+    ctx.textAlign = 'center';
+}
+
+function updateBlacksmithUI() {
+    // No logic needed here, clicks are handled by handleMouseClick
 }
 
 function startCardMinigame() {
@@ -4347,22 +4452,28 @@ function performGachaDraw() {
 
     player.coins -= gachaCost;
 
+    savePlayerStats(); // Save after gacha cost
+
     const rand = Math.random();
     if (rand < 0.10) { // 10% chance for auto_revive
         if (!ultimates.auto_revive.purchased) { // Only give if not already owned
             ultimates.auto_revive.purchased = true;
+            savePlayerStats(); // Save after purchasing new ultimate
             gachaResult = '축하합니다! 자동 부활 필살기를 획득했습니다!';
         } else { // If already owned, give coins instead
             gachaResult = '이미 자동 부활 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
             player.coins += 500;
+            savePlayerStats(); // Save after gaining coins from duplicate ultimate
         }
     } else if (rand < 0.20) { // 10% chance for sports_car
         if (!ultimates.sports_car.purchased) {
             ultimates.sports_car.purchased = true;
+            savePlayerStats(); // Save after purchasing new ultimate
             gachaResult = '축하합니다! 스포츠카 변신 필살기를 획득했습니다!';
         } else {
             gachaResult = '이미 스포츠카 변신 필살기를 보유하고 있습니다! 500 코인을 획득했습니다.';
             player.coins += 500;
+            savePlayerStats(); // Save after gaining coins from duplicate ultimate
         }
     } else { // 80% chance for coins
         let coinAmount;
@@ -4377,6 +4488,7 @@ function performGachaDraw() {
             coinAmount = Math.floor(Math.random() * 20) + 81;
         }
         player.coins += coinAmount;
+        savePlayerStats(); // Save after gaining coins from gacha
         gachaResult = `${coinAmount} 코인을 획득했습니다!`;
     }
 }
@@ -4393,9 +4505,11 @@ function buyItem(item, id) {
         player.coins -= item.price;
         if (item.type === 'consumable') {
             if (item.id === 'potion') player.inventory.potions++;
+            savePlayerStats(); // Save after purchasing consumable
             // alert(`${item.name}을(를) 구매했습니다.`);
         } else if (item.type === 'ultimate') {
             ultimates[id].purchased = true;
+            savePlayerStats(); // Save after purchasing ultimate
             // alert(`${item.name}을(를) 구매했습니다.`);
         }
     } else {
@@ -4514,15 +4628,50 @@ function buyPet(id) {
         }
         player.coins -= petType.price;
         player.pet = createPet(id);
+        savePlayerStats(); // Save after purchasing pet
         alert(`${petType.name}을(를) 구매했습니다.`);
     } else {
         alert('코인이 부족합니다.');
     }
 }
 
+function performBlacksmithUpgrade(type) {
+    let cost = 0;
+    let currentLevel = 0;
+    let alertMessage = '';
+
+    if (type === 'attack') {
+        currentLevel = player.attackLevel;
+        cost = (currentLevel + 1) * 100;
+        if (player.coins >= cost) {
+            player.coins -= cost;
+            player.attackLevel++;
+            savePlayerStats(); // Save after upgrade
+            alertMessage = `공격력이 ${player.attackLevel}로 강화되었습니다!`;
+        } else {
+            alertMessage = '코인이 부족합니다!';
+        }
+    } else if (type === 'defense') {
+        currentLevel = player.defenseLevel;
+        cost = (currentLevel + 1) * 100;
+        if (player.coins >= cost) {
+            player.coins -= cost;
+            player.defenseLevel++;
+            player.maxHp += 1; // Example: Increase max HP by 1 per defense level
+            player.hp = player.maxHp; // Heal to new max HP
+            savePlayerStats(); // Save after upgrade
+            alertMessage = `방어력이 ${player.defenseLevel}로 강화되었습니다!`;
+        } else {
+            alertMessage = '코인이 부족합니다!';
+        }
+    }
+    alert(alertMessage);
+}
+
 function acceptQuest() {
     if (!quest.isActive && !quest.isComplete) {
         quest.isActive = true;
+        savePlayerStats(); // Save quest state
         alert(`퀘스트 수락: ${quest.title}`);
         activeUI = null;
     }
@@ -4540,6 +4689,7 @@ function gameLoop() {
 }
 
 // 게임 시작
+loadPlayerStats(); // Load player stats on game start
 checkLoginStatus();
 
 // Debugging: Log current users in localStorage on page load
