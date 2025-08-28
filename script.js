@@ -753,11 +753,33 @@ const enemyTypes = {
         draw: function() {
             drawRobot(this.x, this.y, this.width, this.height, 'lightgray', this.color, 'black');
         }
+    },
+    'elite_basic': {
+        size: 50,
+        speed: (Math.random() * 1.5 + 0.5),
+        hp: 5,
+        color: 'darkblue',
+        draw: function() {
+            drawRobot(this.x, this.y, this.width, this.height, 'gold', this.color, 'red');
+            ctx.strokeStyle = 'gold';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(this.x, this.y, this.width, this.height);
+        }
     }
 };
 function createEnemy() {
     const enemyTypeKeys = Object.keys(enemyTypes);
-    const randomTypeKey = enemyTypeKeys[Math.floor(Math.random() * enemyTypeKeys.length)];
+    let randomTypeKey;
+
+    // 10% chance to spawn an elite enemy
+    if (Math.random() < 0.1) {
+        randomTypeKey = 'elite_basic';
+    } else {
+        // Filter out elite types for regular spawns
+        const regularEnemyTypeKeys = enemyTypeKeys.filter(key => !key.startsWith('elite_'));
+        randomTypeKey = regularEnemyTypeKeys[Math.floor(Math.random() * regularEnemyTypeKeys.length)];
+    }
+    
     const enemyType = enemyTypes[randomTypeKey];
 
     const fromLeft = Math.random() < 0.2; // 20% chance to spawn from the left
@@ -2281,9 +2303,13 @@ function checkStageCollisions() {
                     }
                     createSparkEffect(laser.x, laser.y); // 스파크 효과
                     createEnemyDeathEffect(enemies[j].x + enemies[j].width / 2, enemies[j].y + enemies[j].height / 2); // 적 사망 효과
+                    
+                    const coinReward = enemies[j].type.startsWith('elite_') ? 50 : 10; // Higher reward for elites
+                    player.coins += coinReward;
+
                     enemies.splice(j, 1);
                     ultimateGauge = Math.min(100, ultimateGauge + 10);
-                    player.coins += 10;
+                    
                     if (gameState === 'survival') {
                         survivalScore += 10;
                     }
@@ -2326,6 +2352,11 @@ function checkStageCollisions() {
                         return;
                     }
                     
+                    if (stage === 12) { // Doctor Boss (tode hidden boss) defeated
+                        goToVillage(); // Go back to village after defeating hidden boss
+                        return;
+                    }
+
                     if (stage === 8) {
                         nextStage();
                         return;
@@ -4211,6 +4242,10 @@ function nextStage() {
     }
 
     stage++;
+    // NEW LOGIC: Skip stage 12 if reached through normal progression
+    if (stage === 12) {
+        stage++; // Skip to stage 13
+    }
     if (stage > stages.length) {
         gameState = 'ending';
         return;
