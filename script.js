@@ -544,29 +544,71 @@ const player = {
         // Draw robot form if transformed
         if (this.isTransformed && this.transformedType === 'robot') {
             ctx.save();
-            ctx.translate(this.x, this.y);
+            // Use player's center as the reference
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            // Colors
+            const mainColor = '#0050a0'; // Strong Blue
+            const secondaryColor = '#c0c0c0'; // Silver
+            const coreColor = '#00ffff'; // Cyan
+            const jointColor = '#444444'; // Dark Gray
+
+            // Legs
+            ctx.fillStyle = mainColor;
+            ctx.fillRect(centerX - 18, centerY + 20, 16, 40); // Left leg
+            ctx.fillRect(centerX + 2, centerY + 20, 16, 40); // Right leg
+            ctx.fillStyle = secondaryColor;
+            ctx.fillRect(centerX - 20, centerY + 55, 20, 10); // Left foot
+            ctx.fillRect(centerX, centerY + 55, 20, 10); // Right foot
 
             // Body
-            ctx.fillStyle = '#C0C0C0'; // Silver
-            ctx.fillRect(0, 0, this.width, this.height);
-
-            // Head
-            ctx.fillStyle = '#808080'; // Gray
-            ctx.fillRect(this.width / 4, -20, this.width / 2, 20);
-
-            // Eyes
-            ctx.fillStyle = '#00FFFF'; // Cyan
-            ctx.fillRect(this.width / 4 + 5, -15, 10, 10);
-            ctx.fillRect(this.width / 2 + 5, -15, 10, 10);
-
-            // Joints
-            ctx.fillStyle = '#404040'; // Dark Gray
+            ctx.fillStyle = mainColor;
             ctx.beginPath();
-            ctx.arc(0, this.height / 2, 10, 0, Math.PI * 2);
-            ctx.arc(this.width, this.height / 2, 10, 0, Math.PI * 2);
-            ctx.arc(this.width / 4, this.height, 10, 0, Math.PI * 2);
-            ctx.arc(this.width * 3 / 4, this.height, 10, 0, Math.PI * 2);
+            ctx.moveTo(centerX, centerY - 25);
+            ctx.lineTo(centerX + 25, centerY);
+            ctx.lineTo(centerX, centerY + 30);
+            ctx.lineTo(centerX - 25, centerY);
+            ctx.closePath();
             ctx.fill();
+
+            // Gold accents on body
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - 15);
+            ctx.lineTo(centerX + 15, centerY);
+            ctx.lineTo(centerX, centerY + 20);
+            ctx.lineTo(centerX - 15, centerY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Arc Reactor (Energy Core)
+            ctx.fillStyle = coreColor;
+            ctx.shadowColor = coreColor;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // Reset shadow
+
+            // Arms
+            ctx.fillStyle = jointColor;
+            ctx.fillRect(centerX - 35, centerY - 10, 10, 10); // Left shoulder
+            ctx.fillRect(centerX + 25, centerY - 10, 10, 10); // Right shoulder
+            ctx.fillStyle = mainColor;
+            ctx.fillRect(centerX - 40, centerY, 15, 30); // Left arm
+            ctx.fillRect(centerX + 25, centerY, 15, 30); // Right arm
+            ctx.fillStyle = secondaryColor;
+            ctx.fillRect(centerX - 42, centerY + 25, 18, 10); // Left hand
+            ctx.fillRect(centerX + 24, centerY + 25, 18, 10); // Right hand
+
+            // Head / Helmet
+            ctx.fillStyle = mainColor;
+            ctx.fillRect(centerX - 15, this.y, 30, 30); // Main helmet shape
+            ctx.fillStyle = secondaryColor;
+            ctx.fillRect(centerX - 15, this.y + 8, 30, 14); // Faceplate
+            ctx.fillStyle = coreColor;
+            ctx.fillRect(centerX - 10, this.y + 12, 20, 6); // Eye slit
 
             ctx.restore();
         }
