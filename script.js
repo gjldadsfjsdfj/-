@@ -345,6 +345,29 @@ function savePlayerStats() {
     localStorage.setItem('playerStats', JSON.stringify(statsToSave));
 }
 
+function resetGameData() {
+    localStorage.removeItem('playerStats');
+    // Reset ultimates to default purchased state
+    for (const ultId in ultimates) {
+        if (ultId === 'damage') {
+            ultimates[ultId].purchased = true;
+        } else {
+            ultimates[ultId].purchased = false;
+        }
+    }
+    // Reset player stats to initial values (assuming player object is defined globally)
+    player.coins = 0;
+    player.hp = 100; // Or initial maxHp
+    player.maxHp = 100;
+    player.attackLevel = 0;
+    player.defenseLevel = 0;
+    player.inventory = { potions: 0 };
+    player.equippedUltimate = 'damage';
+    player.pet = null;
+    newGamePlusLevel = 0;
+    // Add any other player stats that need to be reset
+}
+
 function loadPlayerStats() {
     const savedStats = JSON.parse(localStorage.getItem('playerStats'));
     if (savedStats) {
@@ -365,6 +388,8 @@ function loadPlayerStats() {
         if (savedStats.pet && savedStats.pet.type) {
             player.pet = createPet(savedStats.pet.type);
         }
+    } else {
+        resetGameData(); // Reset to default if no saved data
     }
 }
 
@@ -1884,19 +1909,38 @@ function handleMouseClick(e) {
     }
 
     if (gameState === 'menu') {
-        Object.keys(ultimates).forEach((id, index) => {
-            const ultButton = { x: 250, y: 100 + index * 50, width: 300, height: 45 };
-            if (isColliding(mousePos, ultButton) && ultimates[id].purchased) {
-                player.equippedUltimate = id;
-            }
-        });
-        const villageButton = { x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - 80, width: 150, height: 40 };
-        if(isColliding(mousePos, villageButton)) goToVillage();
+        // Start Game Button
+        const startGameButton = { x: STAGE_WIDTH / 2 - 150, y: 200, width: 300, height: 50 };
+        if (isColliding(mousePos, startGameButton)) {
+            gameState = 'stage'; // Go directly to stage
+            goToStage(); // Initialize stage
+        }
 
+        // New Game Button
+        const newGameButton = { x: STAGE_WIDTH / 2 - 150, y: 270, width: 300, height: 50 };
+        if (isColliding(mousePos, newGameButton)) {
+            if (confirm('정말로 새 게임을 시작하시겠습니까? 모든 데이터가 초기화됩니다.')) {
+                resetGameData();
+                gameState = 'story'; // Start from story
+                storyPage = 0; // Reset story for new game
+            }
+        }
+
+        // Ultimate Skills Button
+        const ultimateSkillsButton = { x: STAGE_WIDTH / 2 - 150, y: 340, width: 300, height: 50 };
+        if (isColliding(mousePos, ultimateSkillsButton)) {
+            activeUI = 'ultimateSelection';
+        }
+
+        // Go to Village Button
+        const villageButton = { x: STAGE_WIDTH / 2 - 150, y: 410, width: 300, height: 50 };
+        if (isColliding(mousePos, villageButton)) {
+            goToVillage();
+        }
     } else if (gameState === 'stage' && isColliding(mousePos, { x: STAGE_WIDTH - 120, y: 10, width: 110, height: 30 })) {
         goToVillage();
     } else if (gameState === 'village') {
-        if (isColliding(mousePos, { x: 20, y: 10, width: 120, height: 30 })) goToMenu();
+        if (isColliding(mousePos, { x: 20, y: 10, width: 120, height: 30 })) activeUI = 'ultimateSelection';
         if (isColliding(mousePos, { x: STAGE_WIDTH - 140, y: 10, width: 120, height: 30 })) goToStage();
     }
 
@@ -1999,7 +2043,44 @@ function handleMouseClick(e) {
         }
     }
 }
+
+function handleMouseWheel(e) {
+    // Only allow changing ultimate if the ultimate selection UI is active
+    if (activeUI !== 'ultimateSelection') {
+        return;
+    }
+
+    e.preventDefault(); // Prevent default scroll behavior
+
+    const ultimateIds = Object.keys(ultimates);
+    let currentIndex = ultimateIds.indexOf(player.equippedUltimate);
+
+    if (e.deltaY > 0) { // Scroll down
+        currentIndex = (currentIndex + 1) % ultimateIds.length;
+    } else { // Scroll up
+        currentIndex = (currentIndex - 1 + ultimateIds.length) % ultimateIds.length;
+    }
+
+    // Ensure the selected ultimate is purchased
+    let newEquippedUltimateId = ultimateIds[currentIndex];
+    while (!ultimates[newEquippedUltimateId].purchased) {
+        if (e.deltaY > 0) { // Scroll down
+            currentIndex = (currentIndex + 1) % ultimateIds.length;
+        } else { // Scroll up
+            currentIndex = (currentIndex - 1 + ultimateIds.length) % ultimateIds.length;
+        }
+        newEquippedUltimateId = ultimateIds[currentIndex];
+        // Prevent infinite loop if no purchased ultimates (shouldn't happen with 'damage' always purchased)
+        if (currentIndex === ultimateIds.indexOf(player.equippedUltimate)) {
+            break;
+        }
+    }
+
+    player.equippedUltimate = newEquippedUltimateId;
+    savePlayerStats(); // Save the new equipped ultimate
+}
 canvas.addEventListener('click', handleMouseClick);
+canvas.addEventListener('wheel', handleMouseWheel);
 
 
 // ====================================================================
@@ -2051,6 +2132,7 @@ function draw() {
     else if (activeUI === 'minigameSelection') drawMinigameSelectionUI();
     else if (activeUI === 'gacha') drawGachaUI(); // New condition for gacha UI
     else if (activeUI === 'blacksmith') drawBlacksmithUI(); // New: Draw Blacksmith UI
+    else if (activeUI === 'ultimateSelection') drawUltimateSelectionUI();
 
     if (newGamePlusLevel > 0) {
         ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.5, 0.05 * newGamePlusLevel)})`;
@@ -2234,46 +2316,41 @@ function drawMenu() {
     ctx.fillStyle = '#333';
     ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
     ctx.fillStyle = 'white';
-    ctx.font = '30px Arial';
+    ctx.font = '40px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('필살기 선택', STAGE_WIDTH / 2, 50);
-    ctx.font = '16px Arial';
-    ctx.fillText('장착할 필살기를 클릭하세요.', STAGE_WIDTH / 2, 80);
+    ctx.fillText('메인 메뉴', STAGE_WIDTH / 2, 100);
 
-    Object.keys(ultimates).forEach((id, index) => {
-        const ult = ultimates[id];
-        const ultButton = { x: 250, y: 100 + index * 50, width: 300, height: 45 };
+    // Start Game Button
+    const startGameButton = { x: STAGE_WIDTH / 2 - 150, y: 200, width: 300, height: 50 };
+    ctx.fillStyle = '#007BFF';
+    ctx.fillRect(startGameButton.x, startGameButton.y, startGameButton.width, startGameButton.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.fillText('게임 시작', STAGE_WIDTH / 2, 235);
 
-        ctx.strokeStyle = player.equippedUltimate === id ? 'yellow' : 'white';
-        ctx.lineWidth = player.equippedUltimate === id ? 4 : 2;
-        ctx.globalAlpha = ult.purchased ? 1.0 : 0.5;
+    // New Game Button
+    const newGameButton = { x: STAGE_WIDTH / 2 - 150, y: 270, width: 300, height: 50 };
+    ctx.fillStyle = '#DC3545';
+    ctx.fillRect(newGameButton.x, newGameButton.y, newGameButton.width, newGameButton.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.fillText('새 게임 (데이터 초기화)', STAGE_WIDTH / 2, 305);
 
-        ctx.strokeRect(ultButton.x, ultButton.y, ultButton.width, ultButton.height);
-
-        ctx.font = '18px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText(ult.name, ultButton.x + 10, ultButton.y + 20);
-        ctx.font = '12px Arial';
-        ctx.fillText(ult.description, ultButton.x + 10, ultButton.y + 38);
-
-        if (!ult.purchased) {
-            ctx.font = '16px Arial';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = 'red';
-            ctx.fillText(`잠김`, ultButton.x + ultButton.width - 10, ultButton.y + 28);
-            ctx.fillStyle = 'white';
-        }
-        ctx.globalAlpha = 1.0;
-    });
-    ctx.textAlign = 'center';
-
-    // 마을 가기 버튼
-    const villageButton = { x: STAGE_WIDTH / 2 - 75, y: STAGE_HEIGHT - 80, width: 150, height: 40 };
-    ctx.fillStyle = '#8f8';
-    ctx.fillRect(villageButton.x, villageButton.y, villageButton.width, villageButton.height);
+    // Ultimate Skills Button
+    const ultimateSkillsButton = { x: STAGE_WIDTH / 2 - 150, y: 340, width: 300, height: 50 };
+    ctx.fillStyle = '#FFC107';
+    ctx.fillRect(ultimateSkillsButton.x, ultimateSkillsButton.y, ultimateSkillsButton.width, ultimateSkillsButton.height);
     ctx.fillStyle = 'black';
-    ctx.font = '20px Arial';
-    ctx.fillText('마을로 가기', STAGE_WIDTH / 2, STAGE_HEIGHT - 55);
+    ctx.font = '24px Arial';
+    ctx.fillText('필살기', STAGE_WIDTH / 2, 375);
+
+    // Go to Village Button (if applicable, e.g., if player is already in a game)
+    const villageButton = { x: STAGE_WIDTH / 2 - 150, y: 410, width: 300, height: 50 };
+    ctx.fillStyle = '#28A745';
+    ctx.fillRect(villageButton.x, villageButton.y, villageButton.width, villageButton.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '24px Arial';
+    ctx.fillText('마을로 가기', STAGE_WIDTH / 2, 445);
 
     ctx.textAlign = 'left';
 }
@@ -2490,8 +2567,7 @@ function checkStageCollisions() {
                     }
 
                     if (stage === 13) { // Colosseum boss rush logic
-                        nextStage();
-                        return;
+                        // Handled by nextStage() itself
                     }
                     
                     if (stage === 12) { // Doctor Boss (tode hidden boss) defeated
@@ -2520,7 +2596,7 @@ function checkStageCollisions() {
             }
         }
 
-        if (boss.clones) {
+        if (boss && boss.clones) {
             for (let i = lasers.length - 1; i >= 0; i--) {
                 const laser = lasers[i];
                 for (let j = boss.clones.length - 1; j >= 0; j--) {
@@ -3422,6 +3498,38 @@ function drawMinigameSelectionUI() {
     // Shooting Gallery Button
     ctx.strokeRect(250, 340, 300, 50);
     ctx.fillText('사격 갤러리', STAGE_WIDTH / 2, 370);
+}
+
+function drawUltimateSelectionUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+    ctx.fillStyle = 'white';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('필살기 선택', STAGE_WIDTH / 2, 50);
+    ctx.font = '16px Arial';
+    ctx.fillText('장착할 필살기를 클릭하세요.', STAGE_WIDTH / 2, 80);
+
+    Object.keys(ultimates).forEach((id, index) => {
+        const ult = ultimates[id];
+        const ultButton = { x: STAGE_WIDTH / 2 - 125, y: 120 + index * 80, width: 250, height: 60 };
+
+        ctx.fillStyle = ult.purchased ? '#007BFF' : 'gray';
+        ctx.strokeStyle = player.equippedUltimate === id ? 'yellow' : 'white';
+        ctx.lineWidth = player.equippedUltimate === id ? 4 : 2;
+        ctx.fillRect(ultButton.x, ultButton.y, ultButton.width, ultButton.height);
+        ctx.strokeRect(ultButton.x, ultButton.y, ultButton.width, ultButton.height);
+        ctx.fillStyle = 'white';
+        ctx.fillText(ult.name, ultButton.x + ultButton.width / 2, ultButton.y + ultButton.height / 2 - 10);
+        ctx.fillText(ult.description, ultButton.x + ultButton.width / 2, ultButton.y + ultButton.height / 2 + 10);
+        if (!ult.purchased) {
+            ctx.fillStyle = 'red';
+            ctx.fillText(`(${ult.price} 코인)`, ultButton.x + ultButton.width / 2, ultButton.y + ultButton.height / 2 + 30);
+        } else if (player.equippedUltimate === id) {
+            ctx.fillStyle = 'lime';
+            ctx.fillText('장착됨', ultButton.x + ultButton.width / 2, ultButton.y + ultButton.height / 2 + 30);
+        }
+    });
 }
 
 function drawBlacksmithUI() {
@@ -4522,6 +4630,7 @@ function nextSurvivalWave() {
 }
 
 function startNewGamePlus() {
+    resetGameData(); // Reset all game data for a fresh New Game+ start
     newGamePlusLevel++;
     stage = 1;
     storyPage = 0;
